@@ -1,0 +1,109 @@
+---
+title: "Traffic analytics: ClickHouse charts, maps, and WAF logs"
+description: "Enable ClickHouse-backed analytics to see live traffic charts, a country map, WAF event logs, and 90-day traffic history in Caddy Proxy Manager."
+---
+
+Caddy Proxy Manager ships a bundled ClickHouse instance that stores every traffic event and WAF event your proxies generate. Because ClickHouse is purpose-built for columnar analytics, queries across millions of rows return in milliseconds — giving you live charts without straining your main SQLite database. All data is automatically purged after **90 days** via ClickHouse's native TTL mechanism.
+
+## What data is collected
+
+| Data type | Details |
+|-----------|---------|
+| Traffic events | Per-request records: timestamp, source IP, country, protocol (HTTP/1.1, HTTP/2, HTTP/3), status code, upstream, bytes transferred |
+| WAF events | Rule ID, severity, action (blocked/detected), matched URI, source IP |
+| Retention | 90 days — ClickHouse TTL drops older rows automatically |
+
+## Enabling analytics
+
+Analytics is activated by adding `clickhouse` to the `COMPOSE_PROFILES` variable and setting a password.
+
+<Steps>
+  <Step title="Generate a strong password">
+    ```bash
+    openssl rand -base64 32
+    ```
+  </Step>
+  <Step title="Update your .env file">
+    ```env
+    COMPOSE_PROFILES=clickhouse
+    CLICKHOUSE_PASSWORD=your-generated-password
+    ```
+  </Step>
+  <Step title="Start (or restart) the stack">
+    ```bash
+    docker compose up -d
+    ```
+
+    Docker Compose starts the `clickhouse` container alongside the web and Caddy containers.
+  </Step>
+</Steps>
+
+## Dashboard features
+
+Once ClickHouse is running, navigate to **Analytics** in the sidebar. The dashboard includes:
+
+<CardGroup cols={2}>
+  <Card title="Live traffic charts" icon="chart-line">
+    Request volume over time, auto-refreshed. Configurable time ranges (1 h, 6 h, 24 h, 7 d, 30 d).
+  </Card>
+  <Card title="Protocol breakdown" icon="network-wired">
+    HTTP/1.1, HTTP/2, and HTTP/3 share displayed as a pie chart.
+  </Card>
+  <Card title="Country map" icon="earth-americas">
+    Geographic heatmap of request origins, colour-coded by volume.
+  </Card>
+  <Card title="Top user agents" icon="browser">
+    Ranked list of browsers and bots generating the most traffic.
+  </Card>
+  <Card title="Blocked request log" icon="shield-halved">
+    Searchable WAF event log with severity, rule ID, action, and source IP.
+  </Card>
+  <Card title="Configurable time ranges" icon="clock">
+    Scope every chart to 1 hour, 6 hours, 24 hours, 7 days, or 30 days.
+  </Card>
+</CardGroup>
+
+## Disabling analytics
+
+Remove `clickhouse` from `COMPOSE_PROFILES` (or leave the variable empty) and omit `CLICKHOUSE_PASSWORD`, then restart the stack:
+
+```env
+COMPOSE_PROFILES=
+```
+
+```bash
+docker compose up -d
+```
+
+The web container starts normally without ClickHouse. The **Analytics** page shows a notice explaining that ClickHouse is not enabled, and no data is collected.
+
+<Note>
+  Disabling analytics does not delete existing ClickHouse data. The `clickhouse-data` Docker volume is preserved. Re-enabling the profile restores access to historical data.
+</Note>
+
+## Combining with GeoIP updates
+
+To run analytics and automatic MaxMind GeoLite2 database updates at the same time, list both profiles:
+
+```env
+COMPOSE_PROFILES=clickhouse,geoipupdate
+CLICKHOUSE_PASSWORD=your-generated-password
+GEOIPUPDATE_ACCOUNT_ID=your-account-id
+GEOIPUPDATE_LICENSE_KEY=your-license-key
+```
+
+The country map in the Analytics dashboard uses GeoIP data to resolve source IPs to countries. Without the `geoipupdate` profile, country resolution falls back to whatever databases are already present in the `geoip-data` volume.
+
+## Advanced ClickHouse configuration
+
+The following variables are optional. The defaults work for most deployments.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLICKHOUSE_URL` | `http://clickhouse:8123` | ClickHouse HTTP endpoint |
+| `CLICKHOUSE_USER` | `cpm` | ClickHouse username |
+| `CLICKHOUSE_DB` | `analytics` | Database name |
+
+<Tip>
+  To point CPM at an external ClickHouse cluster instead of the bundled container, set `CLICKHOUSE_URL`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB` to your cluster's values, then omit `clickhouse` from `COMPOSE_PROFILES`.
+</Tip>

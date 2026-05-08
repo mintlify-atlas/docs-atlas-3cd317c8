@@ -1,0 +1,47 @@
+---
+title: 'Caddy apply API: reload Caddy configuration on demand'
+description: 'Trigger Caddy to reload its generated configuration on demand using the apply endpoint, useful for scripting and recovery scenarios.'
+---
+
+Caddy Proxy Manager regenerates and applies the Caddy configuration automatically whenever you create, update, or delete a proxy host, certificate, or access list. In most cases you do not need to call this endpoint at all. However, the apply endpoint is useful when you are scripting a batch of changes and want to defer the reload until all edits are complete, or when Caddy's running configuration has drifted from the stored configuration and you need to force a reconciliation. The endpoint requires a valid bearer token or an active session cookie with admin privileges.
+
+<Note>
+  All requests must include an `Authorization: Bearer <token>` header or a valid `authjs.session-token` session cookie. Tokens are created on the Profile page.
+</Note>
+
+<Warning>
+  This endpoint instructs Caddy to reload its entire configuration. If the generated configuration contains an error (for example, an invalid certificate path), the reload will fail and Caddy will continue running with its previous configuration. The API returns `500` in that case.
+</Warning>
+
+---
+
+## Apply Caddy configuration
+
+<br />
+
+**`POST /api/v1/caddy/apply`**
+
+Triggers Caddy Proxy Manager to regenerate the Caddy JSON configuration from the database and push it to the running Caddy instance. The operation is synchronous — the response is returned only after Caddy has acknowledged the new configuration.
+
+### When to use this endpoint
+
+- **Batch scripting**: Make several API changes (create multiple proxy hosts, assign certificates, update access lists) and then call apply once to reload Caddy a single time rather than triggering a reload on every write.
+- **Manual recovery**: If you suspect Caddy's live configuration is out of sync with the database (for example, after a crash or a manual Caddy restart), this endpoint forces a full reconciliation.
+- **CI/CD pipelines**: Apply infrastructure-as-code changes and then call this endpoint to activate them without restarting the manager process.
+
+```bash
+curl -X POST https://your-cpm-host/api/v1/caddy/apply \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Response
+
+<ResponseField name="ok" type="boolean" required>
+  Always `true` on success. Confirms Caddy accepted the new configuration.
+</ResponseField>
+
+Returns `200` with `{"ok": true}` on success, `401` if the request is unauthenticated, or `500` if Caddy rejected the configuration.
+
+```json
+{ "ok": true }
+```

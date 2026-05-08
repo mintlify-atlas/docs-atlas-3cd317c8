@@ -1,0 +1,327 @@
+---
+title: 'L4 proxy hosts API: manage TCP/UDP Layer 4 proxies'
+description: 'Create, read, update, and delete Layer 4 TCP/UDP proxy hosts via the Caddy Proxy Manager REST API, with load balancing and geo blocking support.'
+---
+
+The L4 proxy hosts API lets you manage Layer 4 (TCP and UDP) proxy entries in Caddy Proxy Manager. Unlike HTTP proxy hosts, L4 hosts operate at the transport layer: they listen on a port, optionally match traffic by TLS SNI, HTTP host, or PROXY protocol, and forward raw connections to upstream servers. This makes them suitable for proxying databases, SMTP, SSH, game servers, and any other TCP or UDP protocol. All endpoints require a valid bearer token or an active session cookie.
+
+<Note>
+  All requests must include an `Authorization: Bearer <token>` header or a valid `authjs.session-token` session cookie. Tokens are created on the Profile page.
+</Note>
+
+---
+
+## List L4 proxy hosts
+
+<br />
+
+**`GET /api/v1/l4-proxy-hosts`**
+
+Returns an array of all L4 proxy host objects.
+
+```bash
+curl https://your-cpm-host/api/v1/l4-proxy-hosts \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Response
+
+Returns `200` with an array of [L4ProxyHost](#l4-proxy-host-object) objects.
+
+---
+
+## Create an L4 proxy host
+
+<br />
+
+**`POST /api/v1/l4-proxy-hosts`**
+
+Creates a new Layer 4 proxy host. Caddy reloads its configuration automatically after a successful create.
+
+```bash
+curl -X POST https://your-cpm-host/api/v1/l4-proxy-hosts \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "PostgreSQL Proxy",
+    "listen_addresses": [":5432"],
+    "upstreams": ["db-server:5432"],
+    "protocol": "tcp",
+    "matcher_type": "none",
+    "enabled": true
+  }'
+```
+
+### Request body
+
+<ParamField body="name" type="string" required>
+  Human-readable label for this L4 proxy host, e.g. `"PostgreSQL Proxy"`.
+</ParamField>
+
+<ParamField body="listen_addresses" type="string[]" required>
+  Port or address:port strings to listen on, e.g. `[":5432"]`. Caddy listens on all interfaces for port-only entries.
+</ParamField>
+
+<ParamField body="upstreams" type="string[]" required>
+  Upstream servers to forward connections to, e.g. `["db:5432"]`. Supports multiple entries for load balancing.
+</ParamField>
+
+<ParamField body="protocol" type="string" required>
+  Transport protocol: `tcp` or `udp`.
+</ParamField>
+
+<ParamField body="matcher_type" type="string">
+  How incoming connections are matched before forwarding: `none`, `tls_sni`, `http_host`, or `proxy_protocol`.
+</ParamField>
+
+<ParamField body="matchers" type="string[]">
+  Matcher values (e.g. SNI names or host names) used when `matcher_type` is not `none`.
+</ParamField>
+
+<ParamField body="tls_termination" type="boolean">
+  Terminate TLS at the proxy and forward plain traffic to the upstream.
+</ParamField>
+
+<ParamField body="proxy_protocol_version" type="string | null">
+  PROXY protocol version to send to the upstream: `v1`, `v2`, or `null` (disabled).
+</ParamField>
+
+<ParamField body="enabled" type="boolean">
+  Whether this L4 proxy host is active. Defaults to `true`.
+</ParamField>
+
+<ParamField body="load_balancer" type="object | null">
+  Load balancing configuration for multiple upstreams.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean">Enable load balancing.</ParamField>
+    <ParamField body="policy" type="string">Strategy: `random`, `round_robin`, `least_conn`, `ip_hash`, or `first`.</ParamField>
+    <ParamField body="tryDuration" type="string | null">How long to retry failed upstreams, e.g. `5s`.</ParamField>
+    <ParamField body="tryInterval" type="string | null">Interval between retries, e.g. `250ms`.</ParamField>
+    <ParamField body="retries" type="integer | null">Maximum number of upstream retries.</ParamField>
+    <ParamField body="activeHealthCheck" type="object | null">
+      Active health check settings.
+      <Expandable title="properties">
+        <ParamField body="enabled" type="boolean">Enable active health checks.</ParamField>
+        <ParamField body="port" type="integer | null">Port to use for health check connections.</ParamField>
+        <ParamField body="interval" type="string | null">Check interval, e.g. `30s`.</ParamField>
+        <ParamField body="timeout" type="string | null">Check timeout, e.g. `5s`.</ParamField>
+      </Expandable>
+    </ParamField>
+    <ParamField body="passiveHealthCheck" type="object | null">
+      Passive health check settings.
+      <Expandable title="properties">
+        <ParamField body="enabled" type="boolean">Enable passive health checks.</ParamField>
+        <ParamField body="failDuration" type="string | null">How long to mark an upstream as unhealthy after a failure, e.g. `30s`.</ParamField>
+        <ParamField body="maxFails" type="integer | null">Consecutive failures before marking an upstream unhealthy.</ParamField>
+        <ParamField body="unhealthyLatency" type="string | null">Latency threshold that counts as a failure, e.g. `5s`.</ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="dns_resolver" type="object | null">
+  Custom DNS resolver for upstream name resolution.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean">Enable the custom DNS resolver.</ParamField>
+    <ParamField body="resolvers" type="string[]">DNS server addresses, e.g. `["1.1.1.1", "8.8.8.8"]`.</ParamField>
+    <ParamField body="fallbacks" type="string[] | null">Fallback DNS servers.</ParamField>
+    <ParamField body="timeout" type="string | null">Query timeout, e.g. `5s`.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="upstream_dns_resolution" type="object | null">
+  Address family preference for upstream DNS resolution.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean | null">Enable address family preference.</ParamField>
+    <ParamField body="family" type="string | null">Preferred family: `ipv4`, `ipv6`, or `both`.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="geoblock" type="object | null">
+  Geographic and network-based access control applied to incoming connections.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean">Enable geo blocking.</ParamField>
+    <ParamField body="block_countries" type="string[]">ISO 3166-1 alpha-2 country codes to block, e.g. `["CN", "RU"]`.</ParamField>
+    <ParamField body="block_continents" type="string[]">Continent codes to block: `AF`, `AN`, `AS`, `EU`, `NA`, `OC`, `SA`.</ParamField>
+    <ParamField body="block_asns" type="integer[]">Autonomous system numbers to block.</ParamField>
+    <ParamField body="block_cidrs" type="string[]">CIDR ranges to block, e.g. `["10.0.0.0/8"]`.</ParamField>
+    <ParamField body="block_ips" type="string[]">Individual IP addresses to block.</ParamField>
+    <ParamField body="allow_countries" type="string[]">Country codes to allow (deny-all-except mode).</ParamField>
+    <ParamField body="allow_continents" type="string[]">Continent codes to allow.</ParamField>
+    <ParamField body="allow_asns" type="integer[]">ASNs to allow.</ParamField>
+    <ParamField body="allow_cidrs" type="string[]">CIDR ranges to allow.</ParamField>
+    <ParamField body="allow_ips" type="string[]">Individual IPs to allow.</ParamField>
+    <ParamField body="trusted_proxies" type="string[]">Proxy CIDRs trusted for `X-Forwarded-For`.</ParamField>
+    <ParamField body="fail_closed" type="boolean">Drop the connection when the client IP cannot be determined.</ParamField>
+    <ParamField body="response_status" type="integer">HTTP status code returned to blocked clients (applicable when Caddy can send an HTTP response).</ParamField>
+    <ParamField body="response_body" type="string">Response body returned to blocked clients.</ParamField>
+    <ParamField body="response_headers" type="object">Custom response headers as a key-value map.</ParamField>
+    <ParamField body="redirect_url" type="string">Redirect URL for blocked clients.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="geoblock_mode" type="string">
+  How per-host geo blocking merges with the global policy: `merge` or `override`.
+</ParamField>
+
+### Response
+
+Returns `201` with the created [L4ProxyHost](#l4-proxy-host-object).
+
+---
+
+## Get an L4 proxy host
+
+<br />
+
+**`GET /api/v1/l4-proxy-hosts/{id}`**
+
+Returns a single L4 proxy host by its integer ID.
+
+```bash
+curl https://your-cpm-host/api/v1/l4-proxy-hosts/1 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The L4 proxy host ID.
+</ParamField>
+
+### Response
+
+Returns `200` with an [L4ProxyHost](#l4-proxy-host-object), or `404` if not found.
+
+---
+
+## Update an L4 proxy host
+
+<br />
+
+**`PUT /api/v1/l4-proxy-hosts/{id}`**
+
+Replaces the configuration for an existing L4 proxy host. The request body uses the same shape as [Create an L4 proxy host](#create-an-l4-proxy-host). Caddy reloads automatically on success.
+
+```bash
+curl -X PUT https://your-cpm-host/api/v1/l4-proxy-hosts/1 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "PostgreSQL Proxy",
+    "listen_addresses": [":5432"],
+    "upstreams": ["db-primary:5432", "db-replica:5432"],
+    "protocol": "tcp",
+    "matcher_type": "none",
+    "enabled": true
+  }'
+```
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The L4 proxy host ID.
+</ParamField>
+
+### Response
+
+Returns `200` with the updated [L4ProxyHost](#l4-proxy-host-object), `400` on validation error, or `404` if not found.
+
+---
+
+## Delete an L4 proxy host
+
+<br />
+
+**`DELETE /api/v1/l4-proxy-hosts/{id}`**
+
+Permanently removes an L4 proxy host. Caddy reloads automatically after deletion.
+
+```bash
+curl -X DELETE https://your-cpm-host/api/v1/l4-proxy-hosts/1 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The L4 proxy host ID.
+</ParamField>
+
+### Response
+
+Returns `200` with `{"ok": true}`, or `404` if not found.
+
+---
+
+## L4 proxy host object
+
+The full `L4ProxyHost` object returned by all endpoints includes:
+
+<ResponseField name="id" type="integer" required>
+  Unique identifier for the L4 proxy host.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable label.
+</ResponseField>
+
+<ResponseField name="listen_addresses" type="string[]" required>
+  Port or address:port strings Caddy listens on, e.g. `[":5432"]`.
+</ResponseField>
+
+<ResponseField name="upstreams" type="string[]" required>
+  Upstream server addresses, e.g. `["db-server:5432"]`.
+</ResponseField>
+
+<ResponseField name="protocol" type="string" required>
+  Transport protocol: `tcp` or `udp`.
+</ResponseField>
+
+<ResponseField name="matcher_type" type="string">
+  Connection matching strategy: `none`, `tls_sni`, `http_host`, or `proxy_protocol`.
+</ResponseField>
+
+<ResponseField name="matchers" type="string[]">
+  Matcher values (SNI names, host names, etc.) used with the selected `matcher_type`.
+</ResponseField>
+
+<ResponseField name="tls_termination" type="boolean">
+  Whether TLS is terminated at the proxy.
+</ResponseField>
+
+<ResponseField name="proxy_protocol_version" type="string | null">
+  PROXY protocol version sent to the upstream: `v1`, `v2`, or `null`.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean" required>
+  Whether the host is currently active.
+</ResponseField>
+
+<ResponseField name="load_balancer" type="object | null">
+  L4 load balancer configuration. See [request body](#request-body) for field details.
+</ResponseField>
+
+<ResponseField name="dns_resolver" type="object | null">
+  Custom DNS resolver configuration.
+</ResponseField>
+
+<ResponseField name="upstream_dns_resolution" type="object | null">
+  Address family preference for upstream resolution.
+</ResponseField>
+
+<ResponseField name="geoblock" type="object | null">
+  Geographic/network access control configuration.
+</ResponseField>
+
+<ResponseField name="geoblock_mode" type="string">
+  How per-host geo blocking merges with the global policy: `merge` or `override`.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 last-update timestamp.
+</ResponseField>

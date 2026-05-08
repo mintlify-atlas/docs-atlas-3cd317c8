@@ -1,0 +1,388 @@
+---
+title: "mTLS Client Certificates & Roles REST API Reference"
+description: "REST API endpoints for issuing and revoking mTLS client certificates and managing role-based access control for mutual TLS in Caddy Proxy Manager."
+---
+
+Mutual TLS (mTLS) lets you require connecting clients to present a valid certificate before Caddy forwards the request upstream. The API covers two related concerns: **client certificates** — individual leaf certificates issued by one of your stored CA certificates — and **mTLS roles** — named groups that bundle one or more client certificates together so a proxy host can grant or deny access at the role level rather than per-certificate. A typical workflow is: store a CA certificate (see [Certificates API](/api/certificates)), issue a client certificate from that CA, create a role, assign the certificate to the role, and then reference the CA on the proxy host's mTLS configuration.
+
+<Note>
+  All endpoints require a valid bearer token or active session cookie. See [Authentication](/api/authentication) for details.
+</Note>
+
+---
+
+## Client certificates
+
+### List client certificates
+
+<br />
+
+**`GET /api/v1/client-certificates`**
+
+Returns all client certificates, including revoked ones.
+
+**Response `200`**
+
+An array of `ClientCertificate` objects.
+
+<ResponseField name="id" type="integer" required>
+  Unique client certificate ID.
+</ResponseField>
+
+<ResponseField name="ca_certificate_id" type="integer" required>
+  ID of the CA certificate that issued this certificate.
+</ResponseField>
+
+<ResponseField name="common_name" type="string" required>
+  Common name (CN) embedded in the certificate, e.g. `client-device-01`.
+</ResponseField>
+
+<ResponseField name="serial_number" type="string" required>
+  Certificate serial number.
+</ResponseField>
+
+<ResponseField name="fingerprint_sha256" type="string" required>
+  SHA-256 fingerprint of the certificate, useful for identification and revocation checking.
+</ResponseField>
+
+<ResponseField name="certificate_pem" type="string" required>
+  PEM-encoded client certificate. Distribute this to the client device.
+</ResponseField>
+
+<ResponseField name="valid_from" type="string" required>
+  ISO 8601 timestamp of the certificate's not-before date.
+</ResponseField>
+
+<ResponseField name="valid_to" type="string" required>
+  ISO 8601 timestamp of the certificate's not-after date.
+</ResponseField>
+
+<ResponseField name="revoked_at" type="string | null">
+  ISO 8601 timestamp of revocation, or `null` if the certificate is still valid.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp of creation.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 timestamp of the last update.
+</ResponseField>
+
+---
+
+### Issue a client certificate
+
+<br />
+
+**`POST /api/v1/client-certificates`**
+
+Issues a new client certificate signed by the specified CA. The CA must have a private key stored (see [CA Certificates](/api/certificates#ca-certificates)).
+
+**Request body**
+
+<ParamField body="ca_certificate_id" type="integer" required>
+  ID of the CA certificate to sign the new certificate. The CA must have `has_private_key: true`.
+</ParamField>
+
+<ParamField body="common_name" type="string" required>
+  Common name (CN) to embed in the certificate. Use a descriptive identifier for the device or user, e.g. `laptop-alice` or `service-worker-1`.
+</ParamField>
+
+**Response `201`** — the created `ClientCertificate` object, including the PEM-encoded certificate.
+
+```bash
+curl -X POST https://your-cpm-host/api/v1/client-certificates \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ca_certificate_id": 2,
+    "common_name": "laptop-alice"
+  }'
+```
+
+<Note>
+  The `certificate_pem` in the response is the only time the private key bundle is exposed for the client. Save it securely and distribute it to the client device before discarding it from your terminal history.
+</Note>
+
+---
+
+### Get a client certificate
+
+<br />
+
+**`GET /api/v1/client-certificates/{id}`**
+
+Returns a single client certificate by ID.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Client certificate ID.
+</ParamField>
+
+**Response `200`** — a `ClientCertificate` object.  
+**Response `404`** — not found.
+
+---
+
+### Revoke a client certificate
+
+<br />
+
+**`DELETE /api/v1/client-certificates/{id}`**
+
+Revokes the client certificate. The record is retained with a `revoked_at` timestamp; Caddy will stop accepting connections that present this certificate.
+
+<Warning>
+  Revocation is permanent and cannot be undone through the API. If a client needs access again, issue a new certificate.
+</Warning>
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Client certificate ID.
+</ParamField>
+
+**Response `200`**
+
+```json
+{ "ok": true }
+```
+
+**Response `404`** — not found.
+
+```bash
+curl -X DELETE https://your-cpm-host/api/v1/client-certificates/5 \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## mTLS roles
+
+Roles are named groups of client certificates. Assign a role to a proxy host's mTLS configuration to grant access to all certificates in that role at once, rather than listing individual certificates.
+
+### List mTLS roles
+
+<br />
+
+**`GET /api/v1/mtls-roles`**
+
+Returns all mTLS roles.
+
+**Response `200`**
+
+An array of `MtlsRole` objects.
+
+<ResponseField name="id" type="integer" required>
+  Unique role ID.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Role name.
+</ResponseField>
+
+<ResponseField name="description" type="string | null">
+  Optional description.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp of creation.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 timestamp of the last update.
+</ResponseField>
+
+---
+
+### Create an mTLS role
+
+<br />
+
+**`POST /api/v1/mtls-roles`**
+
+Creates a new role. Assign client certificates to it using the [assign certificate](#assign-a-certificate-to-a-role) endpoint.
+
+**Request body**
+
+<ParamField body="name" type="string" required>
+  Role name.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional description.
+</ParamField>
+
+**Response `201`** — the created `MtlsRole` object.
+
+```bash
+curl -X POST https://your-cpm-host/api/v1/mtls-roles \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Engineering",
+    "description": "All engineers with internal tool access"
+  }'
+```
+
+---
+
+### Get an mTLS role
+
+<br />
+
+**`GET /api/v1/mtls-roles/{id}`**
+
+Returns a single role by ID.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Role ID.
+</ParamField>
+
+**Response `200`** — an `MtlsRole` object.  
+**Response `404`** — not found.
+
+---
+
+### Update an mTLS role
+
+<br />
+
+**`PUT /api/v1/mtls-roles/{id}`**
+
+Updates a role's name or description. Certificate assignments are managed separately.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Role ID.
+</ParamField>
+
+**Request body**
+
+<ParamField body="name" type="string">
+  Updated role name.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated description.
+</ParamField>
+
+**Response `200`** — the updated `MtlsRole` object.  
+**Response `404`** — not found.
+
+---
+
+### Delete an mTLS role
+
+<br />
+
+**`DELETE /api/v1/mtls-roles/{id}`**
+
+Permanently removes a role. Certificate assignments within the role are also removed, but the individual client certificates themselves are not revoked.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Role ID.
+</ParamField>
+
+**Response `200`**
+
+```json
+{ "ok": true }
+```
+
+**Response `404`** — not found.
+
+---
+
+## Role certificate assignments
+
+### Assign a certificate to a role
+
+<br />
+
+**`POST /api/v1/mtls-roles/{id}/certificates`**
+
+Adds an existing client certificate to a role. A certificate can belong to multiple roles.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Role ID.
+</ParamField>
+
+**Request body**
+
+<ParamField body="certificateId" type="integer" required>
+  ID of the client certificate to assign.
+</ParamField>
+
+**Response `200`**
+
+```json
+{ "ok": true }
+```
+
+**Response `404`** — role or certificate not found.
+
+<CodeGroup>
+
+```bash Issue and assign a client certificate
+# Step 1 — issue a client certificate from your CA
+curl -X POST https://your-cpm-host/api/v1/client-certificates \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ca_certificate_id": 2,
+    "common_name": "laptop-bob"
+  }'
+
+# Step 2 — assign the returned certificate ID to a role
+curl -X POST https://your-cpm-host/api/v1/mtls-roles/3/certificates \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "certificateId": 7
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Remove a certificate from a role
+
+<br />
+
+**`DELETE /api/v1/mtls-roles/{id}/certificates/{certId}`**
+
+Removes a client certificate from a role. The certificate itself is not revoked; it is simply no longer a member of this role.
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  Role ID.
+</ParamField>
+
+<ParamField path="certId" type="integer" required>
+  Client certificate ID to remove from the role.
+</ParamField>
+
+**Response `200`**
+
+```json
+{ "ok": true }
+```
+
+**Response `404`** — role or certificate assignment not found.
+
+```bash
+curl -X DELETE https://your-cpm-host/api/v1/mtls-roles/3/certificates/7 \
+  -H "Authorization: Bearer <token>"
+```

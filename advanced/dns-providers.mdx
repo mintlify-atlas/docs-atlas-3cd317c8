@@ -1,0 +1,65 @@
+---
+title: "DNS-01 challenge providers for wildcard ACME certificates"
+description: "Use DNS-01 ACME challenges to issue wildcard certificates and obtain TLS for private networks where ports 80 and 443 are not publicly reachable."
+---
+
+Caddy Proxy Manager uses Caddy's ACME client to obtain TLS certificates from Let's Encrypt and ZeroSSL automatically. By default, Caddy proves domain ownership via the HTTP-01 challenge, which requires ports 80 and 443 to be publicly reachable. The **DNS-01 challenge** is an alternative that proves ownership by creating a TXT record in your DNS zone — no open inbound ports needed.
+
+DNS-01 is the only ACME challenge type that can issue **wildcard certificates** (`*.example.com`), and it works in air-gapped or private environments where the ACME server cannot reach your server over the internet.
+
+## When to use DNS-01
+
+| Scenario | HTTP-01 | DNS-01 |
+|----------|:-------:|:------:|
+| Public server with ports 80/443 open | Yes | Yes |
+| Wildcard certificate (`*.example.com`) | No | **Yes** |
+| Private network / no public inbound | No | **Yes** |
+| Internal homelab or Docker-only environment | No | **Yes** |
+
+## Supported providers
+
+| Provider | Notes |
+|----------|-------|
+| Cloudflare | API token or global API key |
+| Route 53 (AWS) | IAM credentials with `route53:ChangeResourceRecordSets` |
+| DigitalOcean | Personal access token |
+| Duck DNS | Token from duckdns.org |
+| Hetzner | DNS API token |
+| Vultr | API key |
+| Porkbun | API key + secret key |
+| GoDaddy | API key + secret |
+| Namecheap | API credentials |
+| OVH | Application key, secret, and consumer key |
+| IONOS | API key |
+| Linode | Personal access token |
+
+## Configuring a DNS provider
+
+<Steps>
+  <Step title="Open DNS provider settings">
+    In the CPM dashboard, navigate to **Settings → DNS Providers** and click **Add Provider**.
+  </Step>
+  <Step title="Select your provider and enter credentials">
+    Choose your DNS provider from the dropdown. Each provider shows the specific fields it requires (API key, secret, zone ID, etc.).
+
+    Credentials are encrypted at rest with **AES-256-GCM** and never exposed in API responses.
+  </Step>
+  <Step title="Save and verify">
+    Click **Save**. CPM stores the provider configuration. No test challenge is issued at this stage.
+  </Step>
+  <Step title="Assign to a certificate">
+    When creating or editing a certificate, select the DNS provider you just configured from the **DNS Provider** dropdown. Caddy will use DNS-01 for that certificate's issuance and renewal.
+  </Step>
+</Steps>
+
+## Per-certificate provider override
+
+You can configure a global default DNS provider in Settings and then override it on individual certificates. This lets you, for example, use Cloudflare for most domains and Route 53 for domains hosted in AWS — all from the same CPM instance.
+
+## Credential security
+
+<Note>
+  DNS provider credentials are encrypted with AES-256-GCM before being written to the SQLite database. They are never returned in plaintext through the API.
+</Note>
+
+Treat your DNS provider API keys with the same care as your ACME account private keys. Use the minimum required permissions — most providers let you create API tokens scoped to a single DNS zone.

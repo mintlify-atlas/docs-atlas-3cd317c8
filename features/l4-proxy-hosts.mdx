@@ -1,0 +1,121 @@
+---
+title: 'L4 TCP/UDP proxy hosts: stream proxying with TLS SNI'
+description: 'Proxy raw TCP and UDP streams with TLS SNI matching, proxy protocol v1/v2 support, load balancing, health checks, and per-host geo blocking.'
+sidebarTitle: 'L4 proxy hosts'
+icon: 'network-wired'
+---
+
+Layer 4 proxy hosts operate at the transport layer, forwarding raw TCP and UDP streams rather than inspecting HTTP messages. This makes them suitable for protocols that Caddy's HTTP reverse proxy cannot handle — database connections, MQTT brokers, SSH tunnels, custom binary protocols, and any service where you need to route based on TLS SNI rather than HTTP host headers. Caddy Proxy Manager manages L4 hosts through Caddy's `layer4` module, with automatic Docker Compose port management handled by the bundled `l4-port-manager` sidecar.
+
+## How L4 proxying differs from HTTP proxying
+
+HTTP proxy hosts (reverse proxies) terminate the HTTP connection, inspect headers, and make routing decisions based on the HTTP layer. L4 proxy hosts forward the raw byte stream without HTTP parsing. Key differences:
+
+- **No HTTP-layer features**: no redirect rules, rewrite rules, custom HTTP headers, ACME certificate management, or access lists.
+- **TLS SNI matching**: routing decisions are made by inspecting the TLS SNI extension during the handshake, before decryption.
+- **Protocol agnostic**: works with any TCP or UDP application.
+- **Proxy Protocol**: can inject or receive PROXY Protocol headers (v1 or v2) to pass the original client IP to backends that support it.
+
+## Creating an L4 proxy host
+
+<Steps>
+  <Step title="Open L4 Proxy Hosts">
+    Navigate to **L4 Proxy Hosts** in the sidebar.
+  </Step>
+  <Step title="Click Add">
+    Click **Add L4 Proxy Host** to open the creation dialog.
+  </Step>
+  <Step title="Choose a protocol">
+    Select **TCP** or **UDP**.
+  </Step>
+  <Step title="Set the listen address">
+    Enter the address Caddy should listen on (e.g. `0.0.0.0:5432` for PostgreSQL or `0.0.0.0:1883` for MQTT).
+  </Step>
+  <Step title="Configure matchers">
+    Choose a matcher type to control which incoming connections this host handles. Select **None** to match all connections on the listen address, or **TLS SNI** to match by the SNI hostname in the TLS handshake.
+  </Step>
+  <Step title="Add upstreams">
+    Enter one or more upstream addresses (e.g. `db-primary:5432`). Multiple upstreams enable load balancing.
+  </Step>
+  <Step title="Save">
+    Click **Save**. The host is added to Caddy's layer4 configuration and the sidecar updates Docker Compose port bindings.
+  </Step>
+</Steps>
+
+## TLS SNI matching
+
+When matcher type is set to **TLS SNI**, you provide one or more SNI hostnames. Caddy inspects the TLS ClientHello and routes the connection only if the SNI value matches. This allows multiple L4 hosts to share the same TCP port, each routing to a different backend based on the requested hostname.
+
+```text
+Matcher type: tls_sni
+Matcher values: db.example.com, db-replica.example.com
+```
+
+<Note>
+  TLS SNI matching works without terminating TLS. Caddy reads the SNI from the ClientHello and forwards the encrypted stream intact to the upstream.
+</Note>
+
+## Proxy Protocol support
+
+PROXY Protocol embeds the original client IP and port into the TCP stream so that backends can see the real client address even when the connection arrives through a proxy.
+
+| Setting | Description |
+|---|---|
+| **Proxy Protocol version** | The version to inject when forwarding to upstreams: `v1` (text) or `v2` (binary). Leave unset to not inject. |
+| **Receive Proxy Protocol** | Enable if the incoming connection already carries a PROXY Protocol header (e.g. from an upstream load balancer). |
+
+<Warning>
+  Enable **Receive Proxy Protocol** only when the upstream sending to this host is trusted and will always send a PROXY Protocol header. Enabling this on a public-facing port without a trusted upstream is a security risk, as clients could spoof their source IP.
+</Warning>
+
+## Load balancing
+
+L4 proxy hosts support a subset of the load balancing policies available for HTTP proxy hosts:
+
+| Policy | Description |
+|---|---|
+| `round_robin` | Cycles through upstreams in order. |
+| `random` | Selects a random upstream for each connection. |
+| `least_conn` | Routes to the upstream with the fewest active connections. |
+| `ip_hash` | Pins a client IP to a consistent upstream. |
+| `first` | Always uses the first upstream; falls back on failure. |
+
+Configure **try duration**, **try interval**, and **retries** in the Load Balancer section to control failover behaviour.
+
+## Health checks
+
+### Active health checks
+
+Active health checks connect to each upstream on a schedule to verify it is reachable.
+
+| Field | Description |
+|---|---|
+| Port | Port to use for the probe. Defaults to the upstream's port. |
+| Interval | How often to probe (e.g. `10s`). |
+| Timeout | Maximum time to wait for a connection (e.g. `3s`). |
+
+### Passive health checks
+
+Passive health checks monitor live connections and mark upstreams unhealthy after repeated failures.
+
+| Field | Description |
+|---|---|
+| Fail duration | How long an upstream stays marked unhealthy. |
+| Max fails | Number of failures before an upstream is marked unhealthy. |
+| Unhealthy latency | Connection time above which a connection counts as a failure. |
+
+## Per-host geo blocking
+
+L4 proxy hosts support geo blocking by country, continent, ASN, CIDR range, or exact IP. Rules are evaluated before the connection is forwarded. Allow rules take precedence over block rules.
+
+<Note>
+  Geo blocking requires the MaxMind GeoLite2 databases. Enable the `geoipupdate` Docker Compose profile and configure your MaxMind account credentials to download the databases. See the [installation guide](/quickstart) for setup instructions.
+</Note>
+
+## Automatic Docker Compose port management
+
+The `l4-port-manager` sidecar service watches the CPM database for L4 host changes and automatically updates the `docker-compose.override.yml` file to add or remove port bindings. This means you do not need to manually edit your Compose file when you add or remove L4 hosts.
+
+<Warning>
+  Each L4 host listens on a distinct port on the host machine. If you assign a port already in use by another service or another L4 host, Caddy will fail to bind and the host will not work. Check for port conflicts before saving a new L4 host.
+</Warning>

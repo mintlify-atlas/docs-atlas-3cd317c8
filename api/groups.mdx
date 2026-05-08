@@ -1,0 +1,350 @@
+---
+title: "Groups API: create, manage, and assign user groups"
+description: "REST API endpoints for user groups in Caddy Proxy Manager. Create groups, manage membership, and use groups for forward auth access control on proxy hosts."
+---
+
+User groups let you organize accounts into named collections that can be granted access to proxy hosts using the [forward auth access control](/api/forward-auth) system. Instead of listing individual user IDs on each host, you assign groups — then adding or removing members from a group automatically updates access across all hosts that reference it.
+
+<Note>
+  All endpoints require authentication. Admin role is required to create or modify groups.
+</Note>
+
+## The group object
+
+<ResponseField name="id" type="integer" required>
+  Unique numeric identifier for the group.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Display name of the group.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Optional description. May be `null`.
+</ResponseField>
+
+<ResponseField name="member_count" type="integer">
+  Number of user accounts currently in this group.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp of when the group was created.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 timestamp of the last modification.
+</ResponseField>
+
+---
+
+## List groups
+
+Returns an array of all user groups.
+
+```
+GET /api/v1/groups
+```
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | Array of group objects |
+| `401` | Unauthorized |
+
+<CodeGroup>
+
+```bash Request
+curl -X GET https://your-instance/api/v1/groups \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+[
+  {
+    "id": 1,
+    "name": "Engineering",
+    "description": "Engineering team members",
+    "member_count": 5,
+    "created_at": "2024-01-20T09:00:00.000Z",
+    "updated_at": "2024-03-15T11:00:00.000Z"
+  },
+  {
+    "id": 2,
+    "name": "Ops",
+    "description": null,
+    "member_count": 2,
+    "created_at": "2024-02-10T14:00:00.000Z",
+    "updated_at": "2024-02-10T14:00:00.000Z"
+  }
+]
+```
+
+</CodeGroup>
+
+---
+
+## Create a group
+
+Creates a new user group.
+
+```
+POST /api/v1/groups
+```
+
+**Request body**
+
+<ParamField body="name" type="string" required>
+  Display name for the group.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional description for the group.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `201` | Created group object |
+| `401` | Unauthorized |
+
+<CodeGroup>
+
+```bash Request
+curl -X POST https://your-instance/api/v1/groups \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Engineering", "description": "Engineering team members"}'
+```
+
+```json Response
+{
+  "id": 1,
+  "name": "Engineering",
+  "description": "Engineering team members",
+  "member_count": 0,
+  "created_at": "2024-06-10T14:00:00.000Z",
+  "updated_at": "2024-06-10T14:00:00.000Z"
+}
+```
+
+</CodeGroup>
+
+---
+
+## Get a group
+
+Returns a single group by its numeric ID.
+
+```
+GET /api/v1/groups/{id}
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the group to retrieve.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | Group object |
+| `404` | Group not found |
+
+<CodeGroup>
+
+```bash Request
+curl -X GET https://your-instance/api/v1/groups/1 \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+{
+  "id": 1,
+  "name": "Engineering",
+  "description": "Engineering team members",
+  "member_count": 5,
+  "created_at": "2024-01-20T09:00:00.000Z",
+  "updated_at": "2024-03-15T11:00:00.000Z"
+}
+```
+
+</CodeGroup>
+
+---
+
+## Update a group
+
+Updates the name or description of an existing group. All body fields are optional; include only the fields you want to change.
+
+```
+PATCH /api/v1/groups/{id}
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the group to update.
+</ParamField>
+
+**Request body**
+
+<ParamField body="name" type="string">
+  New display name for the group.
+</ParamField>
+
+<ParamField body="description" type="string">
+  New description for the group.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | Updated group object |
+| `404` | Group not found |
+
+<CodeGroup>
+
+```bash Request
+curl -X PATCH https://your-instance/api/v1/groups/1 \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Platform Engineering", "description": "Platform and infrastructure team"}'
+```
+
+```json Response
+{
+  "id": 1,
+  "name": "Platform Engineering",
+  "description": "Platform and infrastructure team",
+  "member_count": 5,
+  "created_at": "2024-01-20T09:00:00.000Z",
+  "updated_at": "2024-06-10T15:00:00.000Z"
+}
+```
+
+</CodeGroup>
+
+---
+
+## Delete a group
+
+Permanently deletes a group. Members are not deleted — only the group and its access grants are removed.
+
+```
+DELETE /api/v1/groups/{id}
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the group to delete.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | `{"ok": true}` |
+| `404` | Group not found |
+
+<CodeGroup>
+
+```bash Request
+curl -X DELETE https://your-instance/api/v1/groups/1 \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+{ "ok": true }
+```
+
+</CodeGroup>
+
+---
+
+## Add a member
+
+Adds a user to a group by their user ID.
+
+```
+POST /api/v1/groups/{id}/members
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the group.
+</ParamField>
+
+**Request body**
+
+<ParamField body="userId" type="integer" required>
+  The numeric ID of the user to add to the group.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | `{"ok": true}` |
+| `404` | Group or user not found |
+
+<CodeGroup>
+
+```bash Request
+curl -X POST https://your-instance/api/v1/groups/1/members \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"userId": 3}'
+```
+
+```json Response
+{ "ok": true }
+```
+
+</CodeGroup>
+
+---
+
+## Remove a member
+
+Removes a user from a group.
+
+```
+DELETE /api/v1/groups/{id}/members/{userId}
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the group.
+</ParamField>
+
+<ParamField path="userId" type="integer" required>
+  The numeric ID of the user to remove from the group.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | `{"ok": true}` |
+| `404` | Group or user not found |
+
+<CodeGroup>
+
+```bash Request
+curl -X DELETE https://your-instance/api/v1/groups/1/members/3 \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+{ "ok": true }
+```
+
+</CodeGroup>

@@ -1,0 +1,129 @@
+---
+title: "Mutual TLS (mTLS): built-in CA, client certs, and RBAC"
+description: "Require client certificates on any proxy host using CPM's built-in CA. Issue, track, and revoke certs with fail-closed revocation and path-based RBAC."
+---
+
+Mutual TLS (mTLS) extends standard HTTPS by requiring the client to present a valid certificate in addition to the server's certificate. This means only clients holding a certificate signed by your CA can establish a connection — unauthenticated browsers or scripts are rejected at the TLS handshake before any HTTP request is processed. Caddy Proxy Manager includes a built-in certificate authority so you can issue and revoke client certificates entirely within the dashboard, without an external PKI.
+
+## Built-in CA
+
+The built-in CA is a self-signed root certificate authority managed by CPM. It is used exclusively for issuing and tracking client certificates for mTLS. Each CA you create is a 4096-bit RSA certificate authority stored in the database; its private key is used only when you issue new client certificates through the dashboard.
+
+To create a CA, navigate to **Certificates** and open the **Certificate Authorities** tab. Click **Generate CA**, enter a name and optional common name, and choose a validity period (up to 10 years). CPM generates the keypair and stores the CA in the database.
+
+<Note>
+  CA private keys are stored in the database. Back up your database regularly if you rely on the built-in CA for issuing client certificates.
+</Note>
+
+You can also import an externally generated CA by pasting its PEM certificate. Imported CAs can be used for mTLS verification but CPM cannot issue client certificates from them (no private key is stored).
+
+## Issuing client certificates
+
+Once a CA exists with a stored private key, you can issue client certificates from it.
+
+<Steps>
+  <Step title="Open the CA">
+    Go to **Certificates → Certificate Authorities** and click the CA you want to use.
+  </Step>
+  <Step title="Issue a client certificate">
+    Click **Issue Client Certificate**. Enter a **Common Name** (identifies the certificate holder), choose a validity period (default 365 days, max 3650 days), and set an **Export Password** to protect the PKCS#12 bundle.
+  </Step>
+  <Step title="Download the certificate bundle">
+    CPM generates a 2048-bit RSA client certificate signed by the CA and returns a PKCS#12 (`.p12`) bundle containing the client certificate, private key, and CA chain. Download and distribute this bundle to the certificate holder.
+  </Step>
+  <Step title="Install on the client">
+    Import the `.p12` bundle into the client's operating system, browser, or application certificate store using the export password you set.
+  </Step>
+</Steps>
+
+<Info>
+  By default, CPM exports PKCS#12 bundles using AES-256 encryption. For clients that require legacy compatibility (such as older macOS versions or iOS), enable **Compatibility Mode** when issuing — this switches to 3DES encryption.
+</Info>
+
+## Tracking and revoking client certificates
+
+Every client certificate issued through CPM is tracked in the database with its common name, serial number, SHA-256 fingerprint, and validity dates. Open a CA to see its issued certificates list.
+
+To revoke a certificate, click the certificate row and select **Revoke**. Revoked certificates are removed from Caddy's trusted leaf certificate list immediately — the next request from that client will fail TLS verification.
+
+### Fail-closed revocation
+
+CPM enforces revocation using a leaf certificate pinning approach:
+
+- When a CA has issued certificates and some are active (not revoked), only those active leaf certificates are trusted.
+- When a CA has issued certificates and **all** are revoked, Caddy is configured to pin to the CA certificate itself as a trusted leaf. Because no real client certificate matches the CA certificate's fingerprint, **all client connections are rejected**. This fail-closed behaviour ensures that revoking every certificate in a CA does not accidentally open access.
+
+<Warning>
+  Revoking all certificates issued by a CA will block all mTLS connections to any host using that CA, even if the CA itself is still configured. Issue a new certificate before revoking the last active one to avoid interrupting legitimate clients.
+</Warning>
+
+## mTLS RBAC
+
+mTLS RBAC adds HTTP-layer access control on top of the TLS handshake. After a client presents a valid certificate and the TLS connection is established, Caddy evaluates path-based rules to determine whether that specific certificate is permitted to access the requested path.
+
+### Defining roles
+
+Create roles under **Certificates → mTLS Roles**. A role is a named label (for example, `ops`, `read-only`, `api-client`) that you assign to one or more client certificates.
+
+### Assigning certificates to roles
+
+Open a client certificate and assign it one or more roles. A certificate can hold multiple roles.
+
+### Creating path-based access rules
+
+On a proxy host that has mTLS enabled, open the **mTLS RBAC** section to define access rules. Each rule specifies:
+
+- **Path pattern** — the URL path prefix or glob to match (for example, `/admin/*`).
+- **Allowed roles** — certificates holding any of these roles may access this path.
+- **Allowed certificates** — specific certificates (by ID) that may access this path, independent of roles.
+- **Deny all** — explicitly reject all clients for this path, regardless of certificate.
+
+Rules are evaluated in priority order. For any path that has a matching rule, Caddy checks the client certificate's fingerprint against the set of allowed fingerprints derived from the specified roles and direct certificate assignments. If the fingerprint matches, the request proceeds. If not, Caddy returns `403 mTLS access denied`.
+
+**Example:** require the `ops` role for `/admin/*` while allowing any valid certificate for all other paths:
+
+| Path pattern | Allowed roles | Effect |
+|-------------|--------------|--------|
+| `/admin/*` | `ops` | Only certificates with the `ops` role can access `/admin/`. All others receive 403. |
+| _(no other rules)_ | — | Any valid client certificate can access other paths. |
+
+<Info>
+  Path rules without an explicit rule fall through to a catch-all that allows any client with a valid certificate. Add a **Deny all** rule for paths that should be completely inaccessible regardless of certificate.
+</Info>
+
+## Enabling mTLS on a proxy host
+
+<Steps>
+  <Step title="Open the proxy host editor">
+    Navigate to **Proxy Hosts** and click **Edit** on the host you want to protect.
+  </Step>
+  <Step title="Enable mTLS">
+    Scroll to the **mTLS** section and toggle it on. Select one or more CAs whose client certificates should be trusted for this host.
+  </Step>
+  <Step title="Configure RBAC (optional)">
+    Add path-based access rules in the **mTLS RBAC** section if you need fine-grained per-path control.
+  </Step>
+  <Step title="Save">
+    Click **Save**. Caddy reloads its TLS connection policy immediately. Clients without a valid certificate will receive a TLS handshake error.
+  </Step>
+</Steps>
+
+## End-to-end setup summary
+
+<Steps>
+  <Step title="Generate a CA">
+    **Certificates → Certificate Authorities → Generate CA**. Set a name and validity period.
+  </Step>
+  <Step title="Issue client certificates">
+    Open the CA, click **Issue Client Certificate**, and distribute the `.p12` bundle to each authorised client.
+  </Step>
+  <Step title="(Optional) Create roles and assign certs">
+    Define roles and assign each certificate one or more roles if you need path-based RBAC.
+  </Step>
+  <Step title="Enable mTLS on the proxy host">
+    Edit the proxy host, enable mTLS, and select the CA. Add RBAC path rules as needed.
+  </Step>
+  <Step title="Test">
+    Use `curl --cert client.pem --key client.key https://your-host.example.com` or import the `.p12` into your browser to verify access. Requests without a certificate should receive a TLS handshake failure.
+  </Step>
+</Steps>

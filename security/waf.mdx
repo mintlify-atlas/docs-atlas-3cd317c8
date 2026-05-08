@@ -1,0 +1,165 @@
+---
+title: "Web Application Firewall powered by Coraza and OWASP CRS"
+description: "Protect proxy hosts with Coraza WAF and OWASP Core Rule Set. Block SQLi, XSS, LFI, and RCE globally or per host with per-rule suppression."
+---
+
+Caddy Proxy Manager embeds [Coraza](https://coraza.io/), a production-grade Web Application Firewall, and ships with optional OWASP Core Rule Set (CRS) support. Once enabled, every HTTP request passing through a proxy host is inspected against configurable rules before it reaches your upstream. You can run the WAF globally across all hosts, override or disable it for specific hosts, and fine-tune behaviour using suppression lists and custom SecLang directives — all without touching a Caddyfile.
+
+## Enabling the WAF globally
+
+Navigate to **WAF → Settings** to turn the WAF on for all proxy hosts at once.
+
+<Steps>
+  <Step title="Open WAF settings">
+    In the sidebar, click **WAF**, then select the **Settings** tab.
+  </Step>
+  <Step title="Enable the WAF">
+    Toggle **Enable WAF globally** to on.
+  </Step>
+  <Step title="Load OWASP CRS (recommended)">
+    Check **Load OWASP Core Rule Set** to activate the bundled ruleset covering SQLi, XSS, LFI, and RCE. This is enabled by default when you turn the WAF on.
+  </Step>
+  <Step title="Save">
+    Click **Save WAF settings**. Caddy reloads its configuration immediately — no restart required.
+  </Step>
+</Steps>
+
+<Tip>
+  Start in Detect mode while you tune the ruleset. You can switch to Block mode once you are confident the rules do not fire on legitimate traffic.
+</Tip>
+
+## Block vs. Detect mode
+
+The WAF operates in one of two modes, selectable globally and overridable per host.
+
+| Mode | Behaviour |
+|------|-----------|
+| **Block** | Requests matching a rule are rejected with HTTP `403`. The event is logged. |
+| **Detect** | Requests pass through to the upstream. Rule matches are logged but not blocked. |
+
+Block mode is the default when the WAF is enabled. Detect mode is useful during initial rollout or when you need to observe rule activity on a production host without risking false positives.
+
+## Per-host override
+
+The global WAF setting applies to all proxy hosts by default. You can override this per host in two ways:
+
+- **Disable for a host** — turn off WAF inspection entirely for that host, regardless of the global setting.
+- **Override mode** — replace the global config with a host-specific config (different mode, different OWASP CRS setting, different custom directives).
+- **Merge mode (default)** — the host config is layered on top of the global config. Host-level custom directives are appended after global ones, and suppressed rule IDs from both lists are combined.
+
+To configure a per-host override, open the proxy host editor and expand the **WAF** section.
+
+<Note>
+  Setting a per-host WAF to disabled is an explicit opt-out. Even if the global WAF is enabled, that host will not inspect any traffic.
+</Note>
+
+## OWASP Core Rule Set coverage
+
+When **Load OWASP Core Rule Set** is checked, the following attack categories are covered out of the box:
+
+<CardGroup cols={2}>
+  <Card title="SQL injection (SQLi)" icon="database">
+    Detects and blocks attempts to manipulate SQL queries via request parameters, headers, and cookies.
+  </Card>
+  <Card title="Cross-site scripting (XSS)" icon="code">
+    Identifies reflected and stored XSS payloads in URIs, query strings, and request bodies.
+  </Card>
+  <Card title="Local file inclusion (LFI)" icon="folder-open">
+    Blocks path traversal and directory traversal attempts targeting the server filesystem.
+  </Card>
+  <Card title="Remote code execution (RCE)" icon="terminal">
+    Catches shell injection, command execution, and common web shell patterns.
+  </Card>
+</CardGroup>
+
+The OWASP CRS is loaded from an embedded filesystem in the Coraza plugin. All `@`-prefixed include paths (such as `@coraza.conf-recommended`) resolve from this embedded filesystem and are only activated when **Load OWASP CRS** is on.
+
+## Rule suppression
+
+Some OWASP CRS rules generate false positives for legitimate traffic. You can suppress individual rules globally or per host without disabling the entire WAF.
+
+### Suppress from an event
+
+<Steps>
+  <Step title="Find the event">
+    Open the **WAF → Events** tab and click any row to open the event detail drawer.
+  </Step>
+  <Step title="Choose suppression scope">
+    In the drawer, click **Suppress Globally** to silence the rule for all hosts, or **Suppress for [hostname]** to silence it only for the host where it fired.
+  </Step>
+</Steps>
+
+### Manage from the Suppressed Rules tab
+
+The **WAF → Suppressed Rules** tab lists all globally suppressed rule IDs. From here you can:
+
+- Search by rule ID or description.
+- Add a rule by ID (enter the ID and click **Look up** to preview the rule message before suppressing).
+- Remove a suppression by clicking the trash icon.
+
+Per-host suppressions are managed in each proxy host's WAF override settings.
+
+<Warning>
+  Suppressed rules are applied via `SecRuleRemoveById`. Suppressing a rule removes it from inspection entirely — it will not appear in the event log. Use host-level suppression instead of global suppression whenever possible to limit exposure.
+</Warning>
+
+## Custom SecLang directives
+
+You can inject any ModSecurity SecLang directive into the WAF configuration from **WAF → Settings → Custom SecLang Directives**. Custom directives are applied after the OWASP CRS when both are enabled.
+
+**Example — disable WAF inspection for a path:**
+
+```
+SecRule REQUEST_URI "@beginsWith /api/" "id:9001,phase:1,ctl:ruleEngine=Off,nolog"
+```
+
+This rule turns off the rule engine for any request whose URI starts with `/api/`, which is useful for API endpoints that generate false positives from body scanning.
+
+Additional template directives are available in the **Quick Templates** menu below the directive textarea:
+
+```
+# Allow a specific IP address
+SecRule REMOTE_ADDR "@ipMatch 1.2.3.4" "id:9000,phase:1,allow,nolog,msg:'Allow IP'"
+
+# Block a specific User-Agent string
+SecRule REQUEST_HEADERS:User-Agent "@contains badbot" "id:9002,phase:1,deny,status:403,log"
+```
+
+<Warning>
+  Only `SecRule`, `SecAction`, `SecMarker`, and `SecDefaultAction` directives are accepted in the custom directives field. Directives such as `SecRuleEngine`, `SecRuleRemoveById`, and `Include` are rejected for security reasons. Use the Suppressed Rules tab to manage rule exclusions, and Detect/Block mode to control the engine state.
+</Warning>
+
+## WAF event log
+
+The **WAF → Events** tab shows a searchable, paginated log of all rule matches. Each event captures:
+
+- **Timestamp** and **client IP** (with country code when GeoIP is configured)
+- **HTTP method** and **URI**
+- **Rule ID** and **rule message**
+- **Severity** — `CRITICAL`, `ERROR`, `HIGH`, `WARNING`, `NOTICE`, or `INFO`
+- **Action** — `Blocked` (request rejected with 403) or `Detected` (request passed, rule match logged)
+
+Click any row to open the event detail drawer, which shows the full audit data including request headers, query arguments, response status, and all matched rule details. From the drawer you can suppress the triggering rule globally or for the specific host.
+
+The event log supports filtering by time range (24 hours, 7 days, 30 days, custom) and full-text search across host, IP, URI, and rule message. WAF events are stored in ClickHouse and retained for 90 days.
+
+<Note>
+  The WAF event log requires the ClickHouse analytics profile to be active. If ClickHouse is not running, the Events tab shows a notice and no data is collected. See [Analytics](/advanced/analytics) for setup instructions.
+</Note>
+
+## Tuning tips
+
+<AccordionGroup>
+  <Accordion title="Start with Detect mode">
+    Enable the WAF in Detect mode first and monitor the event log for a few days of real traffic. Identify rules that fire on legitimate requests before switching to Block mode.
+  </Accordion>
+  <Accordion title="Suppress noisy rules per host">
+    Use host-level suppression rather than global suppression. This keeps protection tight on other hosts while relieving specific hosts from rules that conflict with their application logic.
+  </Accordion>
+  <Accordion title="Use custom directives for known-safe paths">
+    If a particular path (such as an admin API or a file upload endpoint) consistently triggers false positives, use a `SecRule REQUEST_URI` directive with `ctl:ruleEngine=Off` to bypass inspection for that path only.
+  </Accordion>
+  <Accordion title="WebSocket hosts">
+    CPM automatically prepends a WebSocket bypass rule for hosts that have WebSocket support enabled. You do not need to add this rule manually — doing so may result in duplicate rule IDs.
+  </Accordion>
+</AccordionGroup>

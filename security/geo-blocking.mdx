@@ -1,0 +1,115 @@
+---
+title: "Geo blocking by country, continent, ASN, and IP range"
+description: "Block or allow traffic by country, continent, ASN, CIDR, or exact IP. Allow rules override block rules, with fail-closed mode and trusted proxy support."
+---
+
+Caddy Proxy Manager lets you control which geographic regions and networks can reach each proxy host. Rules can match on country, continent, autonomous system number, IP range, or exact IP address. Allow rules override block rules, so you can block an entire region and punch holes for trusted networks. Geo blocking is configured per proxy host and requires MaxMind GeoLite2 databases for country, continent, and ASN lookups.
+
+## Rule types
+
+Each geo blocking rule has a type, a value, and a direction (block or allow).
+
+| Type | Value format | Example | Description |
+|------|-------------|---------|-------------|
+| **Country** | ISO 3166-1 alpha-2 | `DE` | Match traffic from a specific country. |
+| **Continent** | Two-letter code | `EU` | Match an entire continent. Valid codes: `AF`, `AN`, `AS`, `EU`, `NA`, `OC`, `SA`. |
+| **ASN** | Integer | `24940` | Match traffic from a specific autonomous system (e.g., a hosting provider or ISP). |
+| **CIDR** | CIDR notation | `91.98.150.0/24` | Match an IP range in CIDR notation. |
+| **IP** | Exact IP address | `91.98.150.103` | Match a single IP address exactly. |
+
+## Block vs. allow rules
+
+Rules are evaluated as either **block** or **allow**. Allow rules always take precedence over block rules regardless of the order they are listed.
+
+This means you can:
+
+- Block an entire continent (`EU`, block), then allow a specific datacenter ASN through (`24940`, allow).
+- Block a CIDR range, then add individual IPs from that range as allow rules.
+- Block all traffic by default using fail-closed mode, then enumerate specific CIDRs or countries to permit.
+
+<Info>
+  Allow rules are additive — all allow rules are evaluated before any block rule can reject a request. A single matching allow rule grants access even if multiple block rules would otherwise apply.
+</Info>
+
+## Fail-closed mode
+
+When fail-closed mode is enabled, any request that cannot be geo-resolved (for example, because the GeoIP database is unavailable or the IP is not in the database) is **blocked** rather than allowed through. This is the safer option for hosts with strict access requirements.
+
+When fail-closed is off (the default), unresolvable IPs are allowed through.
+
+<Warning>
+  Enable fail-closed mode for sensitive hosts where allowing unknown origin traffic is unacceptable. Private and loopback addresses are typically not present in GeoIP databases and will be affected by this setting.
+</Warning>
+
+## Custom response codes and bodies
+
+By default, blocked requests receive HTTP `403 Forbidden`. You can configure a different status code and a custom response body per proxy host to avoid leaking which geo blocking rule matched, or to provide a human-readable explanation.
+
+## Trusted proxy support
+
+If your proxy host is behind a CDN or load balancer, the client IP seen by Caddy may be the CDN's IP rather than the end user's. Configure trusted proxies in the proxy host settings so CPM reads the real client IP from forwarded headers (such as `X-Forwarded-For`) instead of the connection IP.
+
+<Note>
+  Only add IP addresses or ranges you control as trusted proxies. Trusting arbitrary upstream addresses allows any client to spoof their IP via the `X-Forwarded-For` header.
+</Note>
+
+## GeoIP setup
+
+Country, continent, and ASN rules require MaxMind GeoLite2 databases. CPM ships a bundled `geoipupdate` Docker Compose service that downloads and keeps the databases current automatically.
+
+<Steps>
+  <Step title="Register for a MaxMind account">
+    Create a free account at [maxmind.com](https://www.maxmind.com/). GeoLite2 databases are available at no cost with registration.
+  </Step>
+  <Step title="Generate a license key">
+    In your MaxMind account, navigate to **Manage License Keys** and generate a new key. When prompted for editions, enable both **GeoLite2-Country** and **GeoLite2-ASN**.
+  </Step>
+  <Step title="Add credentials to .env">
+    Open your `.env` file and add the following variables:
+
+    ```env
+    GEOIPUPDATE_ACCOUNT_ID=your-account-id
+    GEOIPUPDATE_LICENSE_KEY=your-license-key
+    ```
+
+    Replace `your-account-id` and `your-license-key` with the values from your MaxMind account.
+  </Step>
+  <Step title="Start with the geoipupdate profile">
+    Restart the stack with the `geoipupdate` Compose profile active:
+
+    ```bash
+    docker compose --profile geoipupdate up -d
+    ```
+
+    The `geoipupdate` container downloads the databases on startup and on a schedule to keep them current.
+  </Step>
+</Steps>
+
+<Note>
+  The GeoIP databases are stored in the `geoip-data` Docker volume, which is mounted into both the web container and the Caddy container. Both services share the same database files — you do not need to configure separate download paths.
+</Note>
+
+### Combining profiles
+
+If you also have analytics enabled, list both profiles together in your `.env`:
+
+```env
+COMPOSE_PROFILES=clickhouse,geoipupdate
+CLICKHOUSE_PASSWORD=your-clickhouse-password
+GEOIPUPDATE_ACCOUNT_ID=your-account-id
+GEOIPUPDATE_LICENSE_KEY=your-license-key
+```
+
+Then run:
+
+```bash
+docker compose up -d
+```
+
+## Configuring rules on a proxy host
+
+Once GeoIP databases are in place, open any proxy host editor and navigate to the **Geo Blocking** section. Add rules one by one, choosing the rule type, value, and direction. Rules take effect as soon as you save the proxy host — Caddy reloads its configuration immediately.
+
+<Tip>
+  CIDR and IP rules do not require GeoIP databases. Use them for network-level blocking independent of geographic lookups.
+</Tip>

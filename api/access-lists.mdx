@@ -1,0 +1,280 @@
+---
+title: "HTTP Basic Auth Access Lists REST API Reference Guide"
+description: "REST API endpoints for creating, updating, and deleting HTTP basic auth access lists and managing individual credential entries in Caddy Proxy Manager."
+---
+
+Access lists let you gate proxy hosts behind HTTP basic authentication. Each access list holds a collection of username/password entries; when assigned to a proxy host, Caddy challenges every incoming request for those credentials. The API gives you full lifecycle control over access lists and their entries: create a list, seed it with initial credentials during creation, and add or remove individual entries at any time without touching the rest of the list.
+
+<Note>
+  All endpoints require a valid bearer token or active session cookie. See [Authentication](/api/authentication) for details.
+</Note>
+
+---
+
+## Access lists
+
+### List access lists
+
+<br />
+
+**`GET /api/v1/access-lists`**
+
+Returns all access lists including their current entries.
+
+**Response `200`**
+
+An array of `AccessList` objects.
+
+<ResponseField name="id" type="integer" required>
+  Unique access list ID.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable label for the access list.
+</ResponseField>
+
+<ResponseField name="description" type="string | null">
+  Optional description.
+</ResponseField>
+
+<ResponseField name="entries" type="object[]" required>
+  Current credential entries in this list.
+  <Expandable title="entry properties">
+    <ResponseField name="id" type="integer" required>
+      Unique entry ID. Use this when removing an individual entry.
+    </ResponseField>
+    <ResponseField name="username" type="string" required>
+      Username for basic auth. Passwords are never returned.
+    </ResponseField>
+    <ResponseField name="created_at" type="string" required>
+      ISO 8601 timestamp of when this entry was added.
+    </ResponseField>
+    <ResponseField name="updated_at" type="string" required>
+      ISO 8601 timestamp of the last update.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp of creation.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 timestamp of the last update.
+</ResponseField>
+
+---
+
+### Create an access list
+
+<br />
+
+**`POST /api/v1/access-lists`**
+
+Creates a new access list. You can optionally seed it with initial credential entries using the `users` field; after creation, manage entries individually through the entries endpoints.
+
+**Request body**
+
+<ParamField body="name" type="string" required>
+  Label for the access list.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional description.
+</ParamField>
+
+<ParamField body="users" type="object[]">
+  Seed credentials. Only applied at creation time. To add credentials later use `POST /api/v1/access-lists/{id}/entries`.
+  <Expandable title="user object properties">
+    <ParamField body="username" type="string" required>
+      Username.
+    </ParamField>
+    <ParamField body="password" type="string" required>
+      Plain-text password. The API hashes this before storing it.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Response `201`** — the created `AccessList` object.
+
+```bash
+curl -X POST https://your-cpm-host/api/v1/access-lists \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Internal Users",
+    "description": "Staff access for internal tooling",
+    "users": [
+      { "username": "alice", "password": "s3cr3t" },
+      { "username": "bob",   "password": "p@ssw0rd" }
+    ]
+  }'
+```
+
+---
+
+### Get an access list
+
+<br />
+
+**`GET /api/v1/access-lists/{id}`**
+
+Returns a single access list with its entries.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Access list ID.
+</ParamField>
+
+**Response `200`** — an `AccessList` object.  
+**Response `404`** — access list not found.
+
+---
+
+### Update an access list
+
+<br />
+
+**`PUT /api/v1/access-lists/{id}`**
+
+Updates the name or description of an access list. This operation does not add or remove entries; use the entries endpoints for that.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Access list ID.
+</ParamField>
+
+**Request body**
+
+<ParamField body="name" type="string" required>
+  New label for the access list.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated description.
+</ParamField>
+
+**Response `200`** — the updated `AccessList` object.  
+**Response `400`** — validation error.  
+**Response `404`** — access list not found.
+
+---
+
+### Delete an access list
+
+<br />
+
+**`DELETE /api/v1/access-lists/{id}`**
+
+Permanently removes an access list and all its entries.
+
+<Warning>
+  Deleting an access list that is assigned to one or more proxy hosts removes authentication from those hosts immediately. Reassign or disable the proxy hosts first.
+</Warning>
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Access list ID.
+</ParamField>
+
+**Response `200`**
+
+```json
+{ "ok": true }
+```
+
+**Response `404`** — access list not found.
+
+---
+
+## Entries
+
+Individual credential entries within an access list. Passwords are stored as bcrypt hashes and are never returned by the API.
+
+### Add an entry
+
+<br />
+
+**`POST /api/v1/access-lists/{id}/entries`**
+
+Adds a single username/password credential to an existing access list.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Access list ID.
+</ParamField>
+
+**Request body**
+
+<ParamField body="username" type="string" required>
+  Username for the new credential.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Plain-text password. The API hashes this before storing it.
+</ParamField>
+
+**Response `201`** — the created `AccessListEntry` object.
+
+<ResponseField name="id" type="integer" required>
+  Entry ID. Use this to delete the entry later.
+</ResponseField>
+
+<ResponseField name="username" type="string" required>
+  The stored username.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 timestamp.
+</ResponseField>
+
+```bash
+curl -X POST https://your-cpm-host/api/v1/access-lists/1/entries \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "charlie",
+    "password": "newp@ss!"
+  }'
+```
+
+---
+
+### Remove an entry
+
+<br />
+
+**`DELETE /api/v1/access-lists/{id}/entries/{entryId}`**
+
+Removes a single credential entry from an access list. Other entries in the list are unaffected.
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  Access list ID.
+</ParamField>
+
+<ParamField path="entryId" type="integer" required>
+  Entry ID returned when the entry was created or listed.
+</ParamField>
+
+**Response `200`**
+
+```json
+{ "ok": true }
+```
+
+**Response `404`** — access list or entry not found.
+
+```bash
+curl -X DELETE https://your-cpm-host/api/v1/access-lists/1/entries/3 \
+  -H "Authorization: Bearer <token>"
+```

@@ -1,0 +1,436 @@
+---
+title: "Settings API: read and update configuration groups"
+description: "Use GET and PUT /api/v1/settings/{group} to read or replace general, DNS, WAF, geo blocking, metrics, logging, and Authentik configuration."
+---
+
+The settings API gives you programmatic control over every configuration group in Caddy Proxy Manager. Each group is a self-contained JSON object — read the current state with a `GET` request and overwrite it with a `PUT`. All endpoints require admin-level authentication.
+
+## Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/settings/{group}` | Retrieve settings for a group |
+| `PUT` | `/api/v1/settings/{group}` | Update settings for a group |
+
+---
+
+## Path parameters
+
+<ParamField path="group" type="string" required>
+  The settings group to read or update. Must be one of:
+
+  `general` · `cloudflare` · `dns-provider` · `authentik` · `metrics` · `logging` · `dns` · `upstream-dns` · `geoblock` · `waf` · `instance-mode` · `sync-token`
+</ParamField>
+
+---
+
+## GET /api/v1/settings/\{group\}
+
+Returns the current settings object for the requested group. The shape of the response varies by group — see the group reference below.
+
+<Note>
+  The `instance-mode` group returns `{ "mode": "primary" | "replica" }`. The `sync-token` group returns `{ "has_token": true | false }` and never exposes the raw token value.
+</Note>
+
+<CodeGroup>
+
+```bash Read general settings
+curl -X GET https://your-instance:3000/api/v1/settings/general \
+  -H "Authorization: Bearer <token>"
+```
+
+```bash Read WAF settings
+curl -X GET https://your-instance:3000/api/v1/settings/waf \
+  -H "Authorization: Bearer <token>"
+```
+
+</CodeGroup>
+
+---
+
+## PUT /api/v1/settings/\{group\}
+
+Replaces the settings for the specified group with the supplied JSON body. The entire group is overwritten, so include all fields you want to retain.
+
+<Warning>
+  `PUT` is a full replacement. Any field omitted from the request body will be reset to its default value.
+</Warning>
+
+<CodeGroup>
+
+```bash Update general settings
+curl -X PUT https://your-instance:3000/api/v1/settings/general \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "primaryDomain": "example.com",
+    "acmeEmail": "admin@example.com"
+  }'
+```
+
+```bash Enable Prometheus metrics
+curl -X PUT https://your-instance:3000/api/v1/settings/metrics \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "port": 9090
+  }'
+```
+
+```bash Configure global WAF
+curl -X PUT https://your-instance:3000/api/v1/settings/waf \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "mode": "On",
+    "load_owasp_crs": true,
+    "custom_directives": "",
+    "excluded_rule_ids": []
+  }'
+```
+
+</CodeGroup>
+
+**Response** (`200 OK`)
+
+```json
+{ "ok": true }
+```
+
+---
+
+## Settings group reference
+
+<AccordionGroup>
+
+  <Accordion title="general">
+    Controls the primary domain and the email address used for ACME certificate issuance.
+
+    <ParamField body="primaryDomain" type="string" required>
+      The main domain for this instance (e.g. `example.com`). Used as a reference domain when generating Caddy configuration.
+    </ParamField>
+
+    <ParamField body="acmeEmail" type="string">
+      Email address submitted to the ACME CA (Let's Encrypt, ZeroSSL, etc.) for certificate lifecycle notifications.
+    </ParamField>
+
+    ```json Example
+    {
+      "primaryDomain": "example.com",
+      "acmeEmail": "admin@example.com"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="cloudflare">
+    Cloudflare credentials used for DNS-01 ACME challenges and Cloudflare Tunnel integration.
+
+    <ParamField body="apiToken" type="string" required>
+      A Cloudflare API token scoped to the target zone with `Zone:DNS:Edit` permission.
+    </ParamField>
+
+    <ParamField body="zoneId" type="string">
+      Cloudflare Zone ID for the target domain.
+    </ParamField>
+
+    <ParamField body="accountId" type="string">
+      Cloudflare Account ID, required for Tunnel operations.
+    </ParamField>
+
+    ```json Example
+    {
+      "apiToken": "cf_token_here",
+      "zoneId": "abc123",
+      "accountId": "def456"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="dns-provider">
+    Multi-provider DNS configuration for ACME DNS-01 challenges. Supports any number of named providers with a configurable default.
+
+    <ParamField body="providers" type="object" required>
+      A map of provider names to their credential key-value pairs. For example:
+
+      ```json
+      {
+        "cloudflare": { "api_token": "..." },
+        "route53": { "access_key_id": "...", "secret_access_key": "..." }
+      }
+      ```
+    </ParamField>
+
+    <ParamField body="default" type="string | null" required>
+      Name of the provider to use for DNS-01 challenges by default. Set to `null` to fall back to HTTP-01 only.
+    </ParamField>
+
+    ```json Example
+    {
+      "providers": {
+        "cloudflare": { "api_token": "cf_token_here" }
+      },
+      "default": "cloudflare"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="authentik">
+    Global Authentik SSO configuration. These values are used as defaults for any proxy host that enables Authentik forward auth.
+
+    <ParamField body="outpostDomain" type="string" required>
+      The public domain of your Authentik outpost (e.g. `auth.example.com`).
+    </ParamField>
+
+    <ParamField body="outpostUpstream" type="string" required>
+      The internal upstream URL Caddy uses to reach the Authentik outpost (e.g. `http://authentik:9000`).
+    </ParamField>
+
+    <ParamField body="authEndpoint" type="string">
+      Override the default Authentik authentication endpoint path.
+    </ParamField>
+
+    ```json Example
+    {
+      "outpostDomain": "auth.example.com",
+      "outpostUpstream": "http://authentik:9000",
+      "authEndpoint": ""
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="metrics">
+    Prometheus metrics exposure settings.
+
+    <ParamField body="enabled" type="boolean" required>
+      Whether the Prometheus metrics endpoint is active.
+    </ParamField>
+
+    <ParamField body="port" type="integer">
+      Port on which Caddy exposes the `/metrics` endpoint. Defaults to `9090`.
+    </ParamField>
+
+    ```json Example
+    {
+      "enabled": true,
+      "port": 9090
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="logging">
+    Caddy access log format settings.
+
+    <ParamField body="enabled" type="boolean" required>
+      Whether access logging is enabled globally.
+    </ParamField>
+
+    <ParamField body="format" type="string">
+      Log output format. One of `json` or `console`.
+    </ParamField>
+
+    ```json Example
+    {
+      "enabled": true,
+      "format": "json"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="dns">
+    Global custom DNS resolver settings applied to upstream hostname resolution.
+
+    <ParamField body="enabled" type="boolean" required>
+      Whether the custom DNS resolver is active.
+    </ParamField>
+
+    <ParamField body="resolvers" type="string[]" required>
+      Primary DNS resolver addresses (e.g. `["1.1.1.1", "8.8.8.8"]`).
+    </ParamField>
+
+    <ParamField body="fallbacks" type="string[]">
+      Fallback resolver addresses used when primary resolvers fail.
+    </ParamField>
+
+    <ParamField body="timeout" type="string">
+      DNS query timeout in Go duration format (e.g. `"5s"`).
+    </ParamField>
+
+    ```json Example
+    {
+      "enabled": true,
+      "resolvers": ["1.1.1.1", "8.8.8.8"],
+      "fallbacks": [],
+      "timeout": "5s"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="upstream-dns">
+    Address-family preference for upstream DNS resolution.
+
+    <ParamField body="enabled" type="boolean" required>
+      Whether the upstream DNS address-family preference is enforced.
+    </ParamField>
+
+    <ParamField body="family" type="string" required>
+      IP family to prefer when resolving upstream hostnames. One of `ipv4`, `ipv6`, or `both`.
+    </ParamField>
+
+    ```json Example
+    {
+      "enabled": true,
+      "family": "ipv4"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="geoblock">
+    Global geographic and network-based access control rules. Per-host rules can merge with or override these global settings.
+
+    <ParamField body="enabled" type="boolean">
+      Whether geo-blocking is active globally.
+    </ParamField>
+
+    <ParamField body="block_countries" type="string[]">
+      ISO 3166-1 alpha-2 country codes to block (e.g. `["CN", "RU"]`).
+    </ParamField>
+
+    <ParamField body="block_continents" type="string[]">
+      Continent codes to block. Accepted values: `AF`, `AN`, `AS`, `EU`, `NA`, `OC`, `SA`.
+    </ParamField>
+
+    <ParamField body="block_asns" type="integer[]">
+      Autonomous system numbers to block.
+    </ParamField>
+
+    <ParamField body="block_cidrs" type="string[]">
+      CIDR ranges to block (e.g. `["10.0.0.0/8"]`).
+    </ParamField>
+
+    <ParamField body="block_ips" type="string[]">
+      Individual IP addresses to block.
+    </ParamField>
+
+    <ParamField body="allow_countries" type="string[]">
+      ISO 3166-1 alpha-2 country codes to explicitly allow.
+    </ParamField>
+
+    <ParamField body="allow_continents" type="string[]">
+      Continent codes to explicitly allow.
+    </ParamField>
+
+    <ParamField body="allow_asns" type="integer[]">
+      Autonomous system numbers to explicitly allow.
+    </ParamField>
+
+    <ParamField body="allow_cidrs" type="string[]">
+      CIDR ranges to explicitly allow.
+    </ParamField>
+
+    <ParamField body="allow_ips" type="string[]">
+      Individual IP addresses to explicitly allow.
+    </ParamField>
+
+    <ParamField body="trusted_proxies" type="string[]">
+      CIDRs of trusted reverse proxies used to resolve the real client IP from `X-Forwarded-For`.
+    </ParamField>
+
+    <ParamField body="fail_closed" type="boolean">
+      When `true`, block requests where the client IP cannot be determined. Defaults to `false`.
+    </ParamField>
+
+    <ParamField body="response_status" type="integer">
+      HTTP status code returned to blocked clients (e.g. `403`).
+    </ParamField>
+
+    <ParamField body="response_body" type="string">
+      Response body text sent to blocked clients (e.g. `"Forbidden"`).
+    </ParamField>
+
+    <ParamField body="response_headers" type="object">
+      Custom HTTP headers to include in the block response, as a string-to-string map.
+    </ParamField>
+
+    <ParamField body="redirect_url" type="string">
+      If set, blocked clients receive a `302` redirect to this URL instead of a status/body response.
+    </ParamField>
+
+    ```json Example
+    {
+      "enabled": true,
+      "block_countries": ["CN", "RU"],
+      "block_continents": [],
+      "block_asns": [],
+      "block_cidrs": [],
+      "block_ips": [],
+      "allow_countries": [],
+      "allow_continents": [],
+      "allow_asns": [],
+      "allow_cidrs": [],
+      "allow_ips": [],
+      "trusted_proxies": ["private_ranges"],
+      "fail_closed": false,
+      "response_status": 403,
+      "response_body": "Forbidden",
+      "response_headers": {}
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="waf">
+    Global Web Application Firewall settings. When per-host WAF is set to `merge` mode, these global rules are combined with the host-level rules.
+
+    <ParamField body="enabled" type="boolean" required>
+      Whether the global WAF is active.
+    </ParamField>
+
+    <ParamField body="mode" type="string" required>
+      WAF enforcement mode. `On` blocks matching requests; `Off` disables enforcement.
+    </ParamField>
+
+    <ParamField body="load_owasp_crs" type="boolean" required>
+      Whether to load the OWASP Core Rule Set.
+    </ParamField>
+
+    <ParamField body="custom_directives" type="string" required>
+      Custom Coraza WAF directives appended after the base configuration.
+    </ParamField>
+
+    <ParamField body="excluded_rule_ids" type="integer[]">
+      Rule IDs to exclude from enforcement globally.
+    </ParamField>
+
+    ```json Example
+    {
+      "enabled": true,
+      "mode": "On",
+      "load_owasp_crs": true,
+      "custom_directives": "",
+      "excluded_rule_ids": [920350]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="instance-mode">
+    Read-only group indicating whether this instance runs as a `master` (pushes configuration to slaves) or `slave` (receives synced configuration). This group cannot be updated via the API.
+
+    **Response shape**
+
+    <ResponseField name="mode" type="string">
+      One of `standalone`, `master`, or `slave`.
+    </ResponseField>
+  </Accordion>
+
+  <Accordion title="sync-token">
+    Indicates whether a sync token has been configured on this instance. The token value itself is never returned.
+
+    **Response shape**
+
+    <ResponseField name="has_token" type="boolean">
+      `true` if a sync token is present, `false` otherwise.
+    </ResponseField>
+  </Accordion>
+
+</AccordionGroup>

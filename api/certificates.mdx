@@ -1,0 +1,363 @@
+---
+title: "TLS Certificates & CA Certificates REST API Reference"
+description: "REST API endpoints for managing TLS certificates and certificate authority (CA) records used by Caddy Proxy Manager to terminate HTTPS connections."
+---
+
+The Certificates API lets you create, inspect, update, and delete both TLS certificates served by Caddy and the CA certificates used to trust client connections. Caddy Proxy Manager supports two certificate types: **managed** certificates that are automatically issued and renewed through ACME (e.g. Let's Encrypt), and **imported** certificates where you supply the PEM-encoded certificate and private key directly. CA certificates are separate resources that store a trusted certificate authority's public certificate — and optionally its private key — so the system can validate client certificates or issue new client certificates for mTLS.
+
+<Note>
+  All endpoints require a valid bearer token or active session cookie. See [Authentication](/api/authentication) for details.
+</Note>
+
+---
+
+## Certificates
+
+### List certificates
+
+<br />
+
+**`GET /api/v1/certificates`**
+
+Returns all certificates stored in the system.
+
+**Response `200`**
+
+An array of `Certificate` objects.
+
+<ResponseField name="id" type="integer" required>
+  Unique certificate ID.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable label for the certificate.
+</ResponseField>
+
+<ResponseField name="type" type="string" required>
+  Certificate source. One of `managed` or `imported`.
+</ResponseField>
+
+<ResponseField name="domain_names" type="string[]" required>
+  Domains covered by this certificate, e.g. `["example.com", "*.example.com"]`.
+</ResponseField>
+
+<ResponseField name="auto_renew" type="boolean">
+  Whether the system automatically renews this certificate before expiry (managed type only).
+</ResponseField>
+
+<ResponseField name="provider_options" type="object">
+  <Expandable title="properties">
+    <ResponseField name="api_token" type="string">
+      DNS provider API token used for DNS-01 ACME challenges.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="certificate_pem" type="string | null">
+  PEM-encoded certificate body. Only present for `imported` certificates.
+</ResponseField>
+
+<ResponseField name="private_key_pem" type="string | null">
+  PEM-encoded private key. Only present for `imported` certificates.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp of creation.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 timestamp of the last update.
+</ResponseField>
+
+---
+
+### Create a certificate
+
+<br />
+
+**`POST /api/v1/certificates`**
+
+Creates a new certificate. For `managed` type, Caddy will attempt ACME issuance. For `imported` type, supply the PEM fields directly.
+
+**Request body**
+
+<ParamField body="name" type="string" required>
+  Label for the certificate.
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  `managed` or `imported`.
+</ParamField>
+
+<ParamField body="domain_names" type="string[]" required>
+  List of domain names this certificate should cover.
+</ParamField>
+
+<ParamField body="auto_renew" type="boolean">
+  Enable automatic renewal. Applies to `managed` certificates only.
+</ParamField>
+
+<ParamField body="provider_options" type="object">
+  DNS provider credentials for DNS-01 challenges.
+  <Expandable title="properties">
+    <ParamField body="api_token" type="string">
+      API token for the configured DNS provider.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="certificate_pem" type="string">
+  PEM-encoded certificate chain. Required when `type` is `imported`.
+</ParamField>
+
+<ParamField body="private_key_pem" type="string">
+  PEM-encoded private key. Required when `type` is `imported`.
+</ParamField>
+
+**Response `201`** — the created `Certificate` object.
+
+<CodeGroup>
+
+```bash Create managed certificate
+curl -X POST https://your-cpm-host/api/v1/certificates \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "example.com wildcard",
+    "type": "managed",
+    "domain_names": ["example.com", "*.example.com"],
+    "auto_renew": true,
+    "provider_options": {
+      "api_token": "your-cloudflare-api-token"
+    }
+  }'
+```
+
+```bash Create imported certificate
+curl -X POST https://your-cpm-host/api/v1/certificates \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "internal-app cert",
+    "type": "imported",
+    "domain_names": ["internal.example.com"],
+    "certificate_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+    "private_key_pem": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+### Get a certificate
+
+<br />
+
+**`GET /api/v1/certificates/{id}`**
+
+Returns a single certificate by its integer ID.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Certificate ID.
+</ParamField>
+
+**Response `200`** — a `Certificate` object.  
+**Response `404`** — certificate not found.
+
+---
+
+### Update a certificate
+
+<br />
+
+**`PUT /api/v1/certificates/{id}`**
+
+Replaces the certificate's configuration. Accepts the same fields as the create endpoint.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Certificate ID.
+</ParamField>
+
+**Request body** — same fields as [create a certificate](#create-a-certificate).
+
+**Response `200`** — the updated `Certificate` object.  
+**Response `400`** — validation error.  
+**Response `404`** — certificate not found.
+
+---
+
+### Delete a certificate
+
+<br />
+
+**`DELETE /api/v1/certificates/{id}`**
+
+Removes a certificate permanently. Proxy hosts referencing this certificate will need to be updated.
+
+<Warning>
+  Deleting a certificate that is actively referenced by one or more proxy hosts will break HTTPS for those hosts. Update the proxy host configuration before deleting.
+</Warning>
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  Certificate ID.
+</ParamField>
+
+**Response `200`**
+
+```json
+{ "ok": true }
+```
+
+**Response `404`** — certificate not found.
+
+---
+
+## CA Certificates
+
+CA certificates represent certificate authorities that Caddy trusts for validating client certificates in mTLS setups. You can optionally store the CA's private key so that Caddy Proxy Manager can issue new client certificates on your behalf.
+
+### List CA certificates
+
+<br />
+
+**`GET /api/v1/ca-certificates`**
+
+Returns all CA certificates.
+
+**Response `200`**
+
+<ResponseField name="id" type="integer" required>
+  Unique CA certificate ID.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Label for the CA.
+</ResponseField>
+
+<ResponseField name="certificate_pem" type="string" required>
+  PEM-encoded CA certificate.
+</ResponseField>
+
+<ResponseField name="has_private_key" type="boolean" required>
+  Whether a private key is stored. `true` means client certificates can be issued from this CA.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp of creation.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 timestamp of the last update.
+</ResponseField>
+
+---
+
+### Create a CA certificate
+
+<br />
+
+**`POST /api/v1/ca-certificates`**
+
+Stores a CA certificate. Supply `private_key_pem` if you want the system to issue client certificates using this CA.
+
+**Request body**
+
+<ParamField body="name" type="string" required>
+  Label for the CA certificate.
+</ParamField>
+
+<ParamField body="certificate_pem" type="string" required>
+  PEM-encoded CA certificate.
+</ParamField>
+
+<ParamField body="private_key_pem" type="string">
+  PEM-encoded private key for the CA. Optional; required if you want to issue client certificates.
+</ParamField>
+
+**Response `201`** — the created `CaCertificate` object.
+
+```bash
+curl -X POST https://your-cpm-host/api/v1/ca-certificates \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Internal CA",
+    "certificate_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+    "private_key_pem": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+  }'
+```
+
+---
+
+### Get a CA certificate
+
+<br />
+
+**`GET /api/v1/ca-certificates/{id}`**
+
+Returns a single CA certificate by ID.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  CA certificate ID.
+</ParamField>
+
+**Response `200`** — a `CaCertificate` object.  
+**Response `404`** — not found.
+
+---
+
+### Update a CA certificate
+
+<br />
+
+**`PUT /api/v1/ca-certificates/{id}`**
+
+Replaces a CA certificate's fields. Accepts the same body as the create endpoint.
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  CA certificate ID.
+</ParamField>
+
+**Request body** — same fields as [create a CA certificate](#create-a-ca-certificate).
+
+**Response `200`** — the updated `CaCertificate` object.  
+**Response `404`** — not found.
+
+---
+
+### Delete a CA certificate
+
+<br />
+
+**`DELETE /api/v1/ca-certificates/{id}`**
+
+Permanently removes a CA certificate. This action also removes the stored private key if one was present.
+
+<Warning>
+  Deleting a CA certificate used for mTLS validation will break client certificate authentication for any proxy host that references it.
+</Warning>
+
+**Path parameter**
+
+<ParamField path="id" type="integer" required>
+  CA certificate ID.
+</ParamField>
+
+**Response `200`**
+
+```json
+{ "ok": true }
+```
+
+**Response `404`** — not found.

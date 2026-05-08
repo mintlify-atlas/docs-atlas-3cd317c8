@@ -1,0 +1,195 @@
+---
+title: "Instances API: register slaves and trigger config sync"
+description: "Manage multi-instance deployments via the REST API. Register slave instances, delete them, and trigger on-demand configuration sync from the master node."
+---
+
+The instances API lets you manage the multi-instance topology of Caddy Proxy Manager. A master instance maintains a list of slaves, pushes configuration changes to them on every sync, and exposes a sync-on-demand endpoint. All endpoints require admin-level authentication.
+
+<Note>
+  Multi-instance sync requires the master instance to be in `master` mode (see the `instance-mode` settings group) and each slave to have a valid `INSTANCE_SYNC_TOKEN` configured.
+</Note>
+
+## Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/instances` | List all registered instances |
+| `POST` | `/api/v1/instances` | Register a new replica instance |
+| `DELETE` | `/api/v1/instances/{id}` | Remove a registered instance |
+| `POST` | `/api/v1/instances/sync` | Trigger an immediate sync to all instances |
+
+---
+
+## GET /api/v1/instances
+
+Returns an array of all registered replica instances and their current sync status.
+
+```bash
+curl -X GET https://your-instance:3000/api/v1/instances \
+  -H "Authorization: Bearer <token>"
+```
+
+**Response** (`200 OK`)
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Replica EU",
+    "base_url": "https://replica-eu.example.com:3000",
+    "enabled": true,
+    "has_token": true,
+    "last_sync_at": "2024-06-01T12:00:00Z",
+    "last_sync_error": null,
+    "created_at": "2024-05-01T09:00:00Z",
+    "updated_at": "2024-06-01T12:00:00Z"
+  }
+]
+```
+
+### Instance response fields
+
+<ResponseField name="id" type="integer" required>
+  Unique numeric identifier for this instance record.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable label for the instance.
+</ResponseField>
+
+<ResponseField name="base_url" type="string" required>
+  The root URL of the replica instance (e.g. `https://replica.example.com:3000`). Must use HTTPS — instances reachable only over HTTP are skipped during sync.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean" required>
+  Whether this instance is included in sync operations.
+</ResponseField>
+
+<ResponseField name="has_token" type="boolean" required>
+  Whether a sync token has been stored for this instance. The token value itself is never returned.
+</ResponseField>
+
+<ResponseField name="last_sync_at" type="string | null">
+  ISO 8601 timestamp of the most recent successful sync, or `null` if no sync has completed.
+</ResponseField>
+
+<ResponseField name="last_sync_error" type="string | null">
+  Error message from the most recent failed sync attempt, or `null` if the last sync succeeded.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp of when this instance record was created.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 timestamp of the last update to this instance record.
+</ResponseField>
+
+---
+
+## POST /api/v1/instances
+
+Registers a new replica instance. The `apiToken` is stored securely and used to authenticate sync requests sent to the replica.
+
+### Request body
+
+<ParamField body="name" type="string" required>
+  A human-readable label for this instance (e.g. `"Replica EU"`).
+</ParamField>
+
+<ParamField body="baseUrl" type="string" required>
+  The root URL of the replica instance. Must be an HTTPS URL — HTTP instances are skipped during sync.
+</ParamField>
+
+<ParamField body="apiToken" type="string" required>
+  A valid API token generated on the replica instance. This token is used by the primary to authenticate configuration push requests.
+</ParamField>
+
+<ParamField body="enabled" type="boolean">
+  Whether to include this instance in sync operations immediately after creation. Defaults to `true`.
+</ParamField>
+
+<CodeGroup>
+
+```bash Register an instance
+curl -X POST https://your-instance:3000/api/v1/instances \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Replica EU",
+    "baseUrl": "https://replica-eu.example.com:3000",
+    "apiToken": "replica_api_token_here",
+    "enabled": true
+  }'
+```
+
+</CodeGroup>
+
+**Response** (`201 Created`) — returns the created `Instance` object (see [GET response fields](#instance-response-fields) above).
+
+---
+
+## DELETE /api/v1/instances/\{id\}
+
+Removes a registered instance. The instance is immediately excluded from future sync operations. This does not affect the configuration already deployed to the replica.
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the instance to delete.
+</ParamField>
+
+```bash
+curl -X DELETE https://your-instance:3000/api/v1/instances/1 \
+  -H "Authorization: Bearer <token>"
+```
+
+**Response** (`200 OK`)
+
+```json
+{ "ok": true }
+```
+
+---
+
+## POST /api/v1/instances/sync
+
+Triggers an immediate synchronisation push from the primary to all enabled registered instances. The primary iterates over every enabled instance and pushes the current configuration state. Instances accessible only over plain HTTP are automatically skipped.
+
+```bash
+curl -X POST https://your-instance:3000/api/v1/instances/sync \
+  -H "Authorization: Bearer <token>"
+```
+
+**Response** (`200 OK`)
+
+```json
+{
+  "total": 3,
+  "success": 2,
+  "failed": 0,
+  "skippedHttp": 1
+}
+```
+
+### Sync result fields
+
+<ResponseField name="total" type="integer" required>
+  Total number of enabled instances that were attempted.
+</ResponseField>
+
+<ResponseField name="success" type="integer" required>
+  Number of instances that received the configuration successfully.
+</ResponseField>
+
+<ResponseField name="failed" type="integer" required>
+  Number of instances where the sync attempt failed. Check `last_sync_error` on the individual instance for details.
+</ResponseField>
+
+<ResponseField name="skippedHttp" type="integer" required>
+  Number of instances skipped because their `base_url` uses plain HTTP rather than HTTPS.
+</ResponseField>
+
+<Warning>
+  Instances with an HTTP `base_url` are always skipped during sync regardless of their `enabled` state. Update the instance record with an HTTPS URL to include it in future syncs.
+</Warning>

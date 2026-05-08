@@ -1,0 +1,98 @@
+---
+title: "OAuth2/OIDC SSO: connect Authentik, Keycloak, or Auth0"
+description: "Connect Caddy Proxy Manager to any OIDC-compliant provider — Authentik, Keycloak, Auth0, and more — to enable single sign-on login."
+---
+
+Caddy Proxy Manager supports OAuth2/OIDC authentication with any compliant identity provider. Once configured, an **OAuth login** button appears on the login page alongside the standard username and password form. Users can also link an OAuth identity to an existing local account from their **Profile** page — no account migration required.
+
+<Info>
+  `BASE_URL` must be set to the public URL where users access your dashboard. It must match the redirect URI you register with your OAuth provider exactly.
+</Info>
+
+## Option A: Configure via UI (recommended)
+
+<Steps>
+  <Step title="Open OAuth provider settings">
+    Log in as an admin, then navigate to **Settings → OAuth Providers** and click **Add Provider**.
+  </Step>
+  <Step title="Fill in provider details">
+    Enter the display name, client ID, client secret, and OIDC issuer URL for your provider.
+
+    | Field | Description |
+    |-------|-------------|
+    | Provider name | Display name shown on the login button (e.g., `Authentik`) |
+    | Client ID | OAuth application client ID from your provider |
+    | Client secret | OAuth application client secret |
+    | Issuer URL | OIDC discovery endpoint (e.g., `https://auth.example.com/application/o/app/`) |
+  </Step>
+  <Step title="Copy the callback URL">
+    After saving, CPM displays the exact **Callback URL** for this provider. Copy it and add it to your OAuth provider's list of allowed redirect URIs.
+  </Step>
+  <Step title="Test the login flow">
+    Open a private browser window, navigate to your dashboard's login page, and click the OAuth button to verify the flow end-to-end.
+  </Step>
+</Steps>
+
+## Option B: Configure via environment variables
+
+Set the following variables in your `.env` file, then restart the stack with `docker compose up -d`.
+
+```env
+# Required for OAuth — must match the redirect URI in your provider
+BASE_URL=https://caddy-manager.example.com
+
+# OAuth provider
+OAUTH_ENABLED=true
+OAUTH_PROVIDER_NAME=Authentik        # Display name shown on the login button
+OAUTH_CLIENT_ID=your-client-id
+OAUTH_CLIENT_SECRET=your-client-secret
+OAUTH_ISSUER=https://auth.example.com/application/o/caddy-proxy/
+
+# Optional: override auto-discovered endpoints (only if OIDC discovery fails)
+# OAUTH_AUTHORIZATION_URL=
+# OAUTH_TOKEN_URL=
+# OAUTH_USERINFO_URL=
+
+# Optional: auto-link OAuth identities to existing accounts without passwords
+OAUTH_ALLOW_AUTO_LINKING=false
+```
+
+<Tip>
+  Set `OAUTH_ALLOW_AUTO_LINKING=true` to let users who already have a local account sign in via OAuth without manually linking from the Profile page. CPM matches on email address.
+</Tip>
+
+## Callback URL format
+
+The redirect URI CPM registers follows this pattern:
+
+```
+{BASE_URL}/api/auth/oauth2/callback/{provider-id}
+```
+
+For environment-configured providers, the **provider ID** is derived from `OAUTH_PROVIDER_NAME`: lowercased, with all non-alphanumeric characters replaced by `-`. The exact URL is always visible in **Settings → OAuth Providers** once the provider is synced.
+
+**Examples:**
+
+| BASE_URL | OAUTH_PROVIDER_NAME | Callback URL |
+|----------|---------------------|--------------|
+| `https://caddy-manager.example.com` | `Authentik` | `https://caddy-manager.example.com/api/auth/oauth2/callback/authentik-QXV0aG` |
+| `http://localhost:3000` | `Keycloak` | `http://localhost:3000/api/auth/oauth2/callback/keycloak-S2V5Y2` |
+
+## Account linking
+
+Users can link an OAuth provider to an existing local account without losing their settings or access grants:
+
+1. Log in with your local credentials.
+2. Navigate to your **Profile** page.
+3. Under **Connected Accounts**, click **Link** next to the OAuth provider.
+4. Complete the OAuth flow — the identity is now linked.
+
+After linking, users can sign in with either their password or the OAuth button.
+
+## Upgrading from versions before 1.0-RC
+
+<Warning>
+  The old callback URL (`/api/auth/callback/oauth2`) no longer works. If you configured an OAuth provider before 1.0-RC, you must update the redirect URI in your identity provider to the new format shown in **Settings → OAuth Providers**.
+</Warning>
+
+The new URL includes a provider-specific suffix to support multiple simultaneous providers. Check **Settings → OAuth Providers** for the exact URL after upgrading.

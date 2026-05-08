@@ -1,0 +1,103 @@
+---
+title: "Forward auth portal: SSO for apps without an external IdP"
+description: "CPM's built-in login portal protects proxy hosts with credential and OAuth login, per-host access lists, user groups, and excluded paths. No IdP needed."
+---
+
+Caddy Proxy Manager includes a built-in forward auth identity provider that acts as an SSO portal for your proxy hosts. You do not need Authentik, Authelia, or any external identity provider to gate access to your applications. When a visitor reaches a protected host without a valid session, CPM redirects them to its own login page. After they authenticate, Caddy's `forward_auth` directive validates every subsequent request against CPM before passing it upstream.
+
+## How it works
+
+<Steps>
+  <Step title="Enable forward auth on a proxy host">
+    In the proxy host editor, toggle **Forward Auth** on and choose which users or groups are allowed access.
+  </Step>
+  <Step title="Unauthenticated visitors are redirected">
+    When someone visits the host without a valid CPM session cookie, Caddy's `forward_auth` directive sends the request to CPM's auth endpoint. CPM responds with a redirect to the CPM login portal.
+  </Step>
+  <Step title="User authenticates at the CPM portal">
+    The visitor logs in with their CPM credentials or via OAuth (if configured). CPM issues a session cookie scoped to its own domain.
+  </Step>
+  <Step title="Subsequent requests are validated automatically">
+    On every subsequent request to the protected host, Caddy forwards the session cookie to CPM for validation. If the session is valid and the user is on the access list for that host, the request proceeds. If not, the user is redirected to log in again.
+  </Step>
+</Steps>
+
+<Note>
+  Forward auth works at the HTTP layer through Caddy's `forward_auth` directive. The protected application itself does not need any authentication changes — it sees only pre-validated requests.
+</Note>
+
+## Enabling forward auth on a proxy host
+
+<Steps>
+  <Step title="Open the proxy host editor">
+    Go to **Proxy Hosts** and click **Edit** on the host you want to protect.
+  </Step>
+  <Step title="Enable forward auth">
+    Toggle **Forward Auth** on in the proxy host editor.
+  </Step>
+  <Step title="Add allowed users or groups">
+    In the **Access** section, search for and add the users or groups that should be able to reach this host. Only listed users and groups will be granted access after authentication.
+  </Step>
+  <Step title="Configure excluded paths (optional)">
+    Add any paths that should bypass authentication entirely (for example, `/health`, `/api/webhook`). Requests to these paths skip the forward auth check.
+  </Step>
+  <Step title="Save">
+    Click **Save**. The `forward_auth` directive is injected into the Caddy config for this host immediately.
+  </Step>
+</Steps>
+
+## Per-host access control
+
+Each protected host maintains its own access list of allowed users and groups. A user not on the list will be redirected to log in but will receive an access denied response after authenticating — their credentials are valid, but they have not been granted access to that specific host.
+
+<Warning>
+  Access to a forward-auth-protected host is separate from the user's CPM role. Even an admin user must be explicitly added to a host's access list to reach it through forward auth. Role alone does not grant access.
+</Warning>
+
+## Groups
+
+Groups let you manage access for collections of users. Create a group on the **Groups** page, add members to it, and then grant the group access to one or more proxy hosts.
+
+When you grant a group access to a host, every current and future member of that group gains access automatically. Removing a user from a group revokes their access to all hosts where they were granted access only through that group.
+
+<Tip>
+  Use groups to represent teams or departments. For example, create an `engineering` group and add it to internal tooling hosts — new team members get access as soon as they are added to the group, and leavers lose it immediately when removed.
+</Tip>
+
+## Excluded paths
+
+Excluded paths are URL path prefixes that bypass the forward auth check entirely. Requests matching an excluded path are passed directly to the upstream without session validation.
+
+Common uses:
+
+- Health check endpoints (`/health`, `/ping`) polled by load balancers or uptime monitors.
+- Webhook receivers (`/api/webhook`) called by external services that cannot authenticate via a browser session.
+- Public static assets (`/public/`) that should be accessible without login.
+
+Add excluded paths in the **Forward Auth** section of the proxy host editor. Excluded paths are matched as prefix strings — `/api/webhook` excludes `/api/webhook`, `/api/webhook/stripe`, and so on.
+
+<Warning>
+  Be careful with broad excluded paths. Excluding `/api/` bypasses auth for all API routes on that host, including any that should remain protected.
+</Warning>
+
+## Users, roles, and access
+
+CPM users have one of three roles: **Viewer**, **User**, or **Admin**. These roles control access to the CPM dashboard itself (proxy host management, settings, API tokens, etc.). They do not automatically grant access to forward-auth-protected applications.
+
+| Capability | Viewer | User | Admin |
+|------------|:------:|:----:|:-----:|
+| Log in to CPM dashboard | Yes | Yes | Yes |
+| Access forward-auth-protected apps (when granted) | Yes | Yes | Yes |
+| Manage proxy hosts, certificates, settings | No | No | Yes |
+
+Any CPM user — regardless of role — can access a forward-auth-protected host if and only if they are on that host's access list (directly or through a group).
+
+<Info>
+  New accounts created by an admin default to the **User** role. Users can log in to the CPM portal for forward auth purposes even without any dashboard permissions.
+</Info>
+
+## OAuth login at the portal
+
+If OAuth is configured in CPM (**Settings → OAuth Providers**), the CPM login portal also offers an OAuth login button. Users can authenticate via your OAuth provider (Authentik, Keycloak, Auth0, etc.) and, after a successful OAuth flow, CPM issues a session cookie that satisfies forward auth validation on any host the user has access to.
+
+This allows a single OAuth provider to gate access to multiple proxy hosts without configuring forward auth rules in the OAuth provider itself — CPM handles per-host access control independently of the identity provider.

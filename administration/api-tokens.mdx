@@ -1,0 +1,117 @@
+---
+title: "API tokens: create and manage programmatic access tokens"
+description: "Create named API tokens with optional expiration dates for scripts and CI pipelines. Tokens authenticate against the full REST API using Bearer auth."
+sidebarTitle: "API tokens"
+icon: "key"
+---
+
+API tokens give scripts, CI pipelines, and other automated tools access to the Caddy Proxy Manager REST API without sharing your dashboard credentials. Each token has a name you choose, an optional expiration date, and a secret value that is shown exactly once at creation time. Only users with the **Admin** role can create or manage API tokens.
+
+## Creating a token
+
+<Steps>
+  <Step title="Open the API Tokens page">
+    Navigate to **API Tokens** in the sidebar (or go to your **Profile** page and scroll to the API Tokens section).
+  </Step>
+  <Step title="Click Create">
+    Click the **Create Token** button to open the creation form.
+  </Step>
+  <Step title="Enter a name">
+    Give the token a descriptive name — for example, `CI/CD Pipeline` or `Monitoring Script` — so you can identify it later.
+  </Step>
+  <Step title="Set an optional expiration date">
+    If you want the token to expire automatically, enter an expiration date and time. Leave this blank to create a non-expiring token.
+  </Step>
+  <Step title="Save and copy the token value">
+    Click **Create**. The plain-text token value is displayed once. Copy it immediately and store it securely — it will not be shown again.
+  </Step>
+</Steps>
+
+<Warning>
+  The token value is only returned at creation time and is never displayed again. If you lose it, delete the token and create a new one.
+</Warning>
+
+## Token security
+
+- Token values are hashed before storage. The database never contains the raw token.
+- Each token tracks `created_at`, `last_used_at`, and `expires_at` timestamps.
+- Expired tokens are rejected automatically by the API.
+
+## Optional expiration dates
+
+Setting an expiration date is optional but recommended for tokens granted to third-party systems or time-limited workflows. When the expiration date passes, the token stops working. The token entry remains visible in the list until you delete it.
+
+<Tip>
+  Use short-lived tokens for CI/CD pipelines and long-lived (or non-expiring) tokens only for trusted internal scripts.
+</Tip>
+
+## Using a token
+
+Include the token as a `Bearer` credential in the `Authorization` header of every API request:
+
+```bash
+curl -s "https://your-cpm-instance/api/v1/proxy-hosts" \
+  -H "Authorization: Bearer <your-token>"
+```
+
+All endpoints under `/api/v1/` accept Bearer token authentication. The same endpoints also accept cookie-based session authentication from a logged-in browser session.
+
+<CodeGroup>
+
+```bash curl
+curl -s "https://your-cpm-instance/api/v1/proxy-hosts" \
+  -H "Authorization: Bearer <your-token>"
+```
+
+```python python
+import requests
+
+headers = {"Authorization": "Bearer <your-token>"}
+resp = requests.get("https://your-cpm-instance/api/v1/proxy-hosts", headers=headers)
+print(resp.json())
+```
+
+```javascript javascript
+const resp = await fetch("https://your-cpm-instance/api/v1/proxy-hosts", {
+  headers: { Authorization: "Bearer <your-token>" },
+});
+const data = await resp.json();
+```
+
+</CodeGroup>
+
+## Revoking and deleting tokens
+
+To revoke a token, delete it from the **API Tokens** page or profile section. Deleted tokens stop working immediately. There is no way to temporarily disable a token — if you need to block access, delete the token and issue a new one when needed.
+
+You can also delete tokens via the API:
+
+```bash
+curl -s -X DELETE "https://your-cpm-instance/api/v1/tokens/{id}" \
+  -H "Authorization: Bearer <your-token>"
+```
+
+## API reference for token management
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/tokens` | List all tokens (names and metadata, not values) |
+| `POST` | `/api/v1/tokens` | Create a token — returns the raw value once |
+| `DELETE` | `/api/v1/tokens/{id}` | Delete (revoke) a token |
+
+#### Create token request body
+
+```json
+{
+  "name": "CI/CD Pipeline",
+  "expires_at": "2027-01-01T00:00:00Z"
+}
+```
+
+`expires_at` is optional. Omit it to create a non-expiring token.
+
+<Note>
+  Only the **Admin** role can create or manage API tokens. Viewer and User accounts cannot access token management.
+</Note>
+
+See the [API Reference](/api/tokens) for full request and response schemas.

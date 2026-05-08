@@ -1,0 +1,127 @@
+---
+title: "User management: roles, accounts, and group membership"
+description: "Manage Caddy Proxy Manager users with a three-tier role system. Control who can view, configure, or administer the dashboard and REST API."
+sidebarTitle: "User management"
+icon: "users"
+---
+
+Caddy Proxy Manager uses a three-tier role system — **Viewer**, **User**, and **Admin** — to control what each account can see and do in the dashboard and via the REST API. Every user account has exactly one role, and only Admins can manage other accounts. Separately, access to forward-auth-protected proxy hosts is controlled through an explicit per-host access list, not by role.
+
+## Role capabilities
+
+| Capability | Viewer | User | Admin |
+|---|:---:|:---:|:---:|
+| Log in to the dashboard | Yes | Yes | Yes |
+| View own profile | Yes | Yes | Yes |
+| Access forward-auth-protected apps (when granted) | Yes | Yes | Yes |
+| Manage proxy hosts, certificates, access lists | No | No | Yes |
+| Manage users, groups, and settings | No | No | Yes |
+| View analytics, audit log, and API docs | No | No | Yes |
+| Create and manage API tokens | No | No | Yes |
+| Access the REST API (`/api/v1/`) | No | No | Yes |
+
+<Note>
+  **Forward auth access is separate from role.** All roles must be explicitly granted access to each protected host via the forward auth access list. Even an Admin must be added to a host's access list to reach the protected app through forward auth.
+</Note>
+
+## Initial admin account
+
+The first admin account is created automatically from two environment variables set before the first launch:
+
+```bash
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=YourStr0ng-P@ssw0rd123!
+```
+
+In production, `ADMIN_PASSWORD` must be at least 12 characters and contain uppercase letters, lowercase letters, numbers, and special characters. Development mode (`NODE_ENV=development`) permits the default `admin`/`admin` credentials.
+
+## Creating users
+
+Admins can create new accounts directly from the **Users** page. New users default to the **user** role unless you change it during creation.
+
+<Steps>
+  <Step title="Open the Users page">
+    Navigate to **Users** in the sidebar.
+  </Step>
+  <Step title="Click Create User">
+    Click the **Create User** button in the top-right of the page.
+  </Step>
+  <Step title="Fill in account details">
+    Enter the user's **Email**, optionally a **Display name**, and a **Password** (minimum 8 characters). Select the desired **Role** from the dropdown — **Admin**, **User**, or **Viewer**.
+  </Step>
+  <Step title="Save">
+    Click **Create**. The user can now log in with the credentials you set.
+  </Step>
+</Steps>
+
+## Managing existing users
+
+From the **Users** page you can search and filter accounts, then edit or act on each one:
+
+<CardGroup cols={2}>
+  <Card title="Edit profile and role" icon="pencil">
+    Click the edit icon on a user row to change the display name, email address, or role. Click **Save** to apply.
+  </Card>
+  <Card title="Disable or enable" icon="ban">
+    Click the disable icon to immediately prevent a user from logging in. Click the enable icon to restore access. The account and all its data are preserved.
+  </Card>
+  <Card title="Delete" icon="trash">
+    Click the delete icon and confirm to permanently remove the account. This action cannot be undone.
+  </Card>
+  <Card title="Search" icon="magnifying-glass">
+    Use the search box at the top of the page to filter by name, email, or role.
+  </Card>
+</CardGroup>
+
+<Warning>
+  Deleting a user is permanent. If you only need to prevent login, disable the account instead.
+</Warning>
+
+## Groups
+
+Groups let you organise users for [forward auth](/security/forward-auth) access control. When you grant a group access to a forward-auth-protected proxy host, every current and future member of that group gains access automatically — without updating each host individually.
+
+### Creating a group
+
+<Steps>
+  <Step title="Open the Groups page">
+    Navigate to **Groups** in the sidebar.
+  </Step>
+  <Step title="Create a new group">
+    Click **Create Group**, enter a name and optional description, and save.
+  </Step>
+  <Step title="Add members">
+    Open the group and add users by selecting them from the member list.
+  </Step>
+</Steps>
+
+### Using groups for forward auth access control
+
+Once a group exists, assign it to a proxy host's forward auth access list. Any user in the group will be permitted through. You can combine individual user grants and group grants on the same host.
+
+<Info>
+  Groups are used exclusively for forward auth access control. Group membership does not change a user's dashboard role.
+</Info>
+
+### API
+
+Groups and membership are also manageable via the REST API:
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/groups` | List all groups |
+| `POST` | `/api/v1/groups` | Create a group |
+| `PATCH` | `/api/v1/groups/{id}` | Update a group |
+| `DELETE` | `/api/v1/groups/{id}` | Delete a group |
+| `POST` | `/api/v1/groups/{id}/members` | Add a member |
+| `DELETE` | `/api/v1/groups/{id}/members/{userId}` | Remove a member |
+
+Users are also accessible via the API:
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/users` | List all users |
+| `GET` | `/api/v1/users/{id}` | Get a user |
+| `PUT` | `/api/v1/users/{id}` | Update role, status, name, or email |
+
+See the [API Reference](/api/users) for full request and response details.

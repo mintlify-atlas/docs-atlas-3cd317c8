@@ -1,0 +1,214 @@
+---
+title: "Tokens API: create, list, and revoke API access tokens"
+description: "REST API endpoints for API token management in Caddy Proxy Manager. List tokens, create tokens with optional expiry, and delete tokens by ID."
+---
+
+API tokens let you authenticate requests to the Caddy Proxy Manager REST API without using a browser session. Tokens are long-lived credentials that you can create with an optional expiry date and delete when they are no longer needed. Each token is tied to the user account that created it and carries the same permissions as that account.
+
+<Warning>
+  The raw token value is only returned once at creation time and cannot be retrieved again. Store it securely immediately after creation.
+</Warning>
+
+## The token object
+
+<ResponseField name="id" type="integer" required>
+  Unique numeric identifier for the token.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable label for the token (e.g. `CI/CD Pipeline`).
+</ResponseField>
+
+<ResponseField name="created_by" type="integer" required>
+  The user ID of the account that created the token.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp of when the token was created.
+</ResponseField>
+
+<ResponseField name="last_used_at" type="string">
+  ISO 8601 timestamp of the most recent request authenticated with this token. May be `null` if the token has never been used.
+</ResponseField>
+
+<ResponseField name="expires_at" type="string">
+  ISO 8601 timestamp at which the token expires and can no longer be used. May be `null` for non-expiring tokens.
+</ResponseField>
+
+---
+
+## List tokens
+
+Returns an array of all API tokens for the authenticated user's account. Admin users see all tokens across all accounts.
+
+```
+GET /api/v1/tokens
+```
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | Array of token objects |
+| `401` | Unauthorized |
+
+<CodeGroup>
+
+```bash Request
+curl -X GET https://your-instance/api/v1/tokens \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+[
+  {
+    "id": 1,
+    "name": "CI/CD Pipeline",
+    "created_by": 1,
+    "created_at": "2024-01-15T10:00:00.000Z",
+    "last_used_at": "2024-06-09T18:42:00.000Z",
+    "expires_at": null
+  },
+  {
+    "id": 2,
+    "name": "Monitoring Script",
+    "created_by": 1,
+    "created_at": "2024-03-01T08:00:00.000Z",
+    "last_used_at": null,
+    "expires_at": "2025-03-01T08:00:00.000Z"
+  }
+]
+```
+
+</CodeGroup>
+
+---
+
+## Create a token
+
+Creates a new API token. The response includes the token metadata object and the `raw_token` string that you must use as the Bearer value in API requests.
+
+```
+POST /api/v1/tokens
+```
+
+**Request body**
+
+<ParamField body="name" type="string" required>
+  A descriptive label for the token. Use a name that identifies the system or automation that will use it (e.g. `CI/CD Pipeline`, `Backup Script`).
+</ParamField>
+
+<ParamField body="expires_at" type="string">
+  Optional ISO 8601 expiration datetime. Omit or set to `null` to create a non-expiring token.
+</ParamField>
+
+**Response fields**
+
+<ResponseField name="token" type="object" required>
+  The token metadata object.
+  <Expandable title="properties">
+    <ResponseField name="id" type="integer" required>
+      Unique token ID.
+    </ResponseField>
+    <ResponseField name="name" type="string" required>
+      Token label.
+    </ResponseField>
+    <ResponseField name="created_by" type="integer" required>
+      ID of the user who created the token.
+    </ResponseField>
+    <ResponseField name="created_at" type="string" required>
+      Creation timestamp.
+    </ResponseField>
+    <ResponseField name="last_used_at" type="string">
+      Last-used timestamp. `null` for new tokens.
+    </ResponseField>
+    <ResponseField name="expires_at" type="string">
+      Expiration timestamp. `null` for non-expiring tokens.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="raw_token" type="string" required>
+  The plaintext Bearer token value. **Only returned at creation time.** Copy and store this value before closing the response — it cannot be retrieved again.
+</ResponseField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `201` | Token created; includes `token` object and `raw_token` |
+| `400` | Invalid request body |
+| `401` | Unauthorized |
+
+<CodeGroup>
+
+```bash Create a non-expiring token
+curl -X POST https://your-instance/api/v1/tokens \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "CI/CD Pipeline"}'
+```
+
+```bash Create a token with expiry
+curl -X POST https://your-instance/api/v1/tokens \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Temporary Access", "expires_at": "2025-01-01T00:00:00.000Z"}'
+```
+
+```json Response
+{
+  "token": {
+    "id": 3,
+    "name": "CI/CD Pipeline",
+    "created_by": 1,
+    "created_at": "2024-06-10T14:00:00.000Z",
+    "last_used_at": null,
+    "expires_at": null
+  },
+  "raw_token": "cpm_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+}
+```
+
+</CodeGroup>
+
+<Note>
+  Use the value of `raw_token` as the Bearer credential in the `Authorization` header of subsequent API requests: `Authorization: Bearer cpm_a1b2c3d4...`
+</Note>
+
+---
+
+## Delete a token
+
+Permanently deletes a token by its ID. Any requests using the deleted token will immediately start returning `401 Unauthorized`.
+
+```
+DELETE /api/v1/tokens/{id}
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the token to delete.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | `{"ok": true}` |
+| `401` | Unauthorized |
+| `404` | Token not found |
+
+<CodeGroup>
+
+```bash Request
+curl -X DELETE https://your-instance/api/v1/tokens/3 \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+{ "ok": true }
+```
+
+</CodeGroup>

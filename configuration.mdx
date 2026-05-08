@@ -1,0 +1,199 @@
+---
+title: "Environment variables and Docker Compose configuration"
+description: "Reference for all CPM environment variables, Docker Compose profiles, data volumes, production security requirements, and rootless PUID/PGID operation."
+---
+
+Caddy Proxy Manager is configured entirely through environment variables read from a `.env` file at startup. The Docker Compose file translates those variables into container environment, volume mounts, and optional service profiles. This page covers every variable, what it controls, and the requirements that apply in production.
+
+## Environment variables
+
+### Required variables
+
+These three variables must be set before the stack will start. The Docker Compose file uses the `?` operator, so a missing value causes an immediate startup error with a clear message.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SESSION_SECRET` | Session encryption key. Must be 32 or more characters. | None — **required** |
+| `ADMIN_USERNAME` | Username for the initial admin account. | None — **required** |
+| `ADMIN_PASSWORD` | Password for the initial admin account. See [password requirements](#production-requirements) below. | None — **required** |
+
+### Application configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `BASE_URL` | Public URL where users access the dashboard. Required for OAuth — must match the redirect URI in your OAuth provider exactly. Do not include a trailing slash. | `http://localhost:3000` |
+| `CADDY_API_URL` | Caddy Admin API endpoint used by the web container to push configuration. | `http://caddy:2019` |
+| `DATABASE_URL` | SQLite database URL. | `file:/app/data/caddy-proxy-manager.db` |
+| `CERTS_DIRECTORY` | Directory where manually imported certificate files are stored. | `./data/certs` |
+
+### Login rate limiting
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `LOGIN_MAX_ATTEMPTS` | Maximum failed login attempts before the account is rate-limited. | `5` |
+| `LOGIN_WINDOW_MS` | Sliding window for counting login attempts, in milliseconds. | `300000` (5 minutes) |
+| `LOGIN_BLOCK_MS` | How long an account is blocked after exceeding `LOGIN_MAX_ATTEMPTS`, in milliseconds. | `900000` (15 minutes) |
+
+### Better Auth rate limiting
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AUTH_TRUST_HOST` | Trust the `Host` header for URL construction. Enable only when behind a reverse proxy that rewrites the `Host` header. | `false` |
+| `AUTH_RATE_LIMIT_ENABLED` | Enable Better Auth request rate limiting. | `true` |
+| `AUTH_RATE_LIMIT_WINDOW` | Rate limit window in seconds. | `60` |
+| `AUTH_RATE_LIMIT_MAX` | Maximum requests allowed per window. | `5` |
+
+### OAuth2 / OIDC authentication
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OAUTH_ENABLED` | Enable OAuth2/OIDC authentication on the login page. | `false` |
+| `OAUTH_PROVIDER_NAME` | Display name shown on the login page button (for example `Authentik`). | `OAuth2` |
+| `OAUTH_CLIENT_ID` | OAuth2 client ID from your provider. | None |
+| `OAUTH_CLIENT_SECRET` | OAuth2 client secret from your provider. | None |
+| `OAUTH_ISSUER` | OIDC discovery URL. CPM auto-discovers authorization, token, and userinfo endpoints from this URL. | None |
+| `OAUTH_AUTHORIZATION_URL` | Override the auto-discovered authorization endpoint. | Auto-discovered from `OAUTH_ISSUER` |
+| `OAUTH_TOKEN_URL` | Override the auto-discovered token endpoint. | Auto-discovered from `OAUTH_ISSUER` |
+| `OAUTH_USERINFO_URL` | Override the auto-discovered userinfo endpoint. | Auto-discovered from `OAUTH_ISSUER` |
+| `OAUTH_ALLOW_AUTO_LINKING` | Automatically link OAuth identities to existing accounts that have no password set. | `false` |
+
+### Instance sync
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `INSTANCE_MODE` | Instance role: `standalone`, `master`, or `slave`. | `standalone` |
+| `INSTANCE_SYNC_TOKEN` | Bearer token that slaves use to authenticate sync requests from the master. Required when `INSTANCE_MODE=slave`. | None |
+| `INSTANCE_SLAVES` | JSON array of slave instances the master pushes configuration to. Example: `[{"name":"replica","url":"https://replica.example.com","token":"<token>"}]` | None |
+| `INSTANCE_SYNC_INTERVAL` | Periodic sync interval in seconds. Set to `0` to disable periodic sync (changes are still pushed on every save). | `0` |
+| `INSTANCE_SYNC_ALLOW_HTTP` | Allow configuration sync over HTTP. Use only for internal Docker networks. | `false` |
+
+### ClickHouse analytics
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CLICKHOUSE_URL` | ClickHouse HTTP endpoint. | `http://clickhouse:8123` |
+| `CLICKHOUSE_USER` | ClickHouse username. | `cpm` |
+| `CLICKHOUSE_PASSWORD` | ClickHouse password. Required when the `clickhouse` profile is active. Generate with `openssl rand -base64 32`. | None |
+| `CLICKHOUSE_DB` | ClickHouse database name. | `analytics` |
+
+## Docker Compose profiles
+
+Profiles activate optional services. Set the `COMPOSE_PROFILES` variable in `.env` to a comma-separated list of profile names.
+
+```env
+# Analytics only (default in .env.example)
+COMPOSE_PROFILES=clickhouse
+
+# Analytics and automatic GeoIP updates
+COMPOSE_PROFILES=clickhouse,geoipupdate
+
+# No optional services
+COMPOSE_PROFILES=
+```
+
+| Profile | Service started | Purpose |
+|---------|-----------------|---------|
+| `clickhouse` | `caddy-proxy-manager-clickhouse` | ClickHouse database for traffic and WAF event analytics. Requires `CLICKHOUSE_PASSWORD`. |
+| `geoipupdate` | `geoipupdate-<hostname>` | Downloads and refreshes MaxMind GeoLite2 Country and ASN databases every 72 hours. Required for geo blocking. Requires `GEOIPUPDATE_ACCOUNT_ID` and `GEOIPUPDATE_LICENSE_KEY`. |
+
+### GeoIP variables (geoipupdate profile)
+
+| Variable | Description |
+|----------|-------------|
+| `GEOIPUPDATE_ACCOUNT_ID` | MaxMind account ID. Register free at [maxmind.com](https://www.maxmind.com/). |
+| `GEOIPUPDATE_LICENSE_KEY` | MaxMind license key with `GeoLite2-Country` and `GeoLite2-ASN` permissions. |
+
+## Production requirements
+
+### SESSION_SECRET
+
+Generate a cryptographically random value with at least 32 characters:
+
+```bash
+openssl rand -base64 32
+```
+
+Copy the output directly into `.env`:
+
+```env
+SESSION_SECRET=<output from openssl>
+```
+
+<Warning>
+  Never commit `.env` to version control. Run `chmod 600 .env` to restrict file permissions to your user.
+</Warning>
+
+### ADMIN_PASSWORD
+
+Production mode enforces a strong password policy. The password must be:
+
+- 12 or more characters
+- At least one uppercase letter (A–Z)
+- At least one lowercase letter (a–z)
+- At least one digit (0–9)
+- At least one special character (`!@#$%^&*` and similar)
+
+Example of a compliant password:
+
+```bash
+# Good: length, case, digits, special characters
+ADMIN_PASSWORD=YourStr0ng-P@ssw0rd123!
+```
+
+<Note>
+  Development mode (`NODE_ENV=development`) allows the default `admin`/`admin` credentials. The Docker Compose file always sets `NODE_ENV=production`, so weak passwords are rejected at startup.
+</Note>
+
+### Quick production setup
+
+```bash
+# Generate secrets
+export SESSION_SECRET=$(openssl rand -base64 32)
+export CLICKHOUSE_PASSWORD=$(openssl rand -base64 32)
+
+# Write to .env
+sed -i "s|SESSION_SECRET=.*|SESSION_SECRET=${SESSION_SECRET}|" .env
+sed -i "s|CLICKHOUSE_PASSWORD=.*|CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}|" .env
+
+# Set your admin password and start
+ADMIN_USERNAME=admin ADMIN_PASSWORD='YourStr0ng-P@ssw0rd123!' docker compose up -d
+```
+
+## Data persistence
+
+All state is stored in Docker named volumes. Deleting containers does not delete data; you would need to remove the volumes explicitly with `docker compose down -v`.
+
+| Volume | Mounted in | Contents |
+|--------|-----------|---------|
+| `caddy-manager-data` | `web` (read/write), `l4-port-manager` (read/write) | SQLite database, certificate files |
+| `caddy-data` | `caddy` (read/write) | Caddy's ACME certificate cache and keys |
+| `caddy-config` | `caddy` (read/write) | Caddy's runtime JSON configuration |
+| `caddy-logs` | `caddy` (read/write), `web` (read-only) | Caddy access logs used for analytics |
+| `geoip-data` | `web` (read-only), `caddy` (read-only), `geoipupdate` (read/write) | MaxMind GeoLite2 Country, City, and ASN databases |
+| `clickhouse-data` | `clickhouse` (read/write) | Traffic and WAF event data |
+
+<Tip>
+  Back up `caddy-manager-data` and `caddy-data` regularly. They contain your proxy configuration, imported certificates, and ACME-issued certificate keys.
+</Tip>
+
+## Rootless operation (PUID / PGID)
+
+Both the `web` and `caddy` containers accept `PUID` and `PGID` build arguments that set the user and group IDs the process runs as. This avoids volume permission conflicts when the container user does not match the host user.
+
+Find your host user's IDs:
+
+```bash
+id -u   # UID
+id -g   # GID
+```
+
+Set them in `.env`:
+
+```env
+PUID=1000
+PGID=1000
+```
+
+<Note>
+  `PUID`/`PGID` are build arguments, not runtime environment variables. If you change them, rebuild the images with `docker compose build` before restarting the stack. When using the pre-built images from `ghcr.io`, the defaults are `10001:10001` for the web container and `10000:10000` for the Caddy container.
+</Note>

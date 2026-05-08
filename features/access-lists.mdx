@@ -1,0 +1,87 @@
+---
+title: 'HTTP basic auth access lists for proxy host protection'
+description: 'Protect proxy hosts with multi-account HTTP basic auth. Create access lists, add bcrypt-hashed users, and assign lists to one or more proxy hosts.'
+sidebarTitle: 'Access lists'
+icon: 'lock'
+---
+
+Access lists provide HTTP Basic Authentication for proxy hosts. Each access list holds one or more username and password pairs; passwords are stored as bcrypt hashes. Assigning an access list to a proxy host causes Caddy to challenge every request with a 401 response, requiring the visitor to authenticate before the request is forwarded to the upstream. A single access list can be assigned to multiple proxy hosts, making it easy to share credentials across related services.
+
+## What access lists are
+
+An access list is a named collection of username/password credentials. When a proxy host has an access list assigned, Caddy enforces HTTP Basic Authentication:
+
+1. The browser prompts the user for a username and password.
+2. Caddy compares the supplied credentials against the bcrypt-hashed entries in the access list.
+3. If a match is found, the request is forwarded to the upstream. Otherwise, the connection is rejected with a 401.
+
+Access lists are independent of CPM user accounts. They are separate credentials intended for end-users of the services you are proxying, not for CPM administrators.
+
+## Creating an access list
+
+<Steps>
+  <Step title="Open Access Lists">
+    Navigate to **Access Lists** in the sidebar.
+  </Step>
+  <Step title="Click Add">
+    Click **Add Access List**.
+  </Step>
+  <Step title="Name the list">
+    Enter a **Name** (required) and an optional **Description** to help identify its purpose later.
+  </Step>
+  <Step title="Add users">
+    Enter a **Username** and **Password** for the first user and click **Add User**. Repeat for any additional users. Passwords are bcrypt-hashed before storage — they cannot be recovered after saving.
+  </Step>
+  <Step title="Save">
+    Click **Save**. The access list is now available to assign to proxy hosts.
+  </Step>
+</Steps>
+
+## Adding users to an existing access list
+
+Open an existing access list and click **Add User**. Enter the username and password for the new entry and click **Save**. The user is added immediately; no proxy hosts need to be reconfigured.
+
+To change a user's password, use the **Regenerate Password** action on the entry. This removes the old entry and adds a new one with the same username and the new bcrypt hash.
+
+To remove a user, click **Delete** next to the entry. The user loses access to all proxy hosts that use this access list.
+
+## Assigning an access list to a proxy host
+
+<Steps>
+  <Step title="Open a proxy host">
+    Navigate to **Proxy Hosts** and open the proxy host you want to protect.
+  </Step>
+  <Step title="Select an access list">
+    In the **Access List** dropdown, select the access list you created.
+  </Step>
+  <Step title="Save">
+    Click **Save**. Caddy applies HTTP Basic Authentication immediately.
+  </Step>
+</Steps>
+
+To remove protection, open the proxy host, set the **Access List** field to **None**, and save.
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Internal dashboards" icon="chart-bar">
+    Protect monitoring tools, admin UIs, or internal apps exposed via a proxy host without setting up a full identity provider.
+  </Card>
+  <Card title="Development previews" icon="code">
+    Lock down staging environments or preview deployments so only team members with credentials can access them.
+  </Card>
+  <Card title="Shared services" icon="users">
+    Create a single access list with multiple user accounts and assign it to all proxy hosts that share the same user base.
+  </Card>
+  <Card title="Quick protection" icon="shield">
+    Add a layer of authentication to any service that has no built-in auth, such as self-hosted tools or dashboards.
+  </Card>
+</CardGroup>
+
+## Limitations and alternatives
+
+HTTP Basic Authentication sends credentials with every request. While HTTPS encrypts the credentials in transit, Basic Auth has no session management — there is no login page, no logout, and no per-user audit trail.
+
+<Note>
+  For more advanced use cases — SSO, per-user access control, logout, or audit logs — use the **Forward Auth** feature instead. CPM includes a built-in forward auth portal that can protect proxy hosts without an external identity provider. You can also integrate with Authentik or any OIDC-compliant provider via the Authentik integration.
+</Note>

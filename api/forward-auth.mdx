@@ -1,0 +1,255 @@
+---
+title: "Forward Auth API: access control and session management"
+description: "REST API endpoints for forward auth access and sessions in Caddy Proxy Manager. Configure per-host access lists and manage active forward auth sessions by user."
+---
+
+Forward authentication lets Caddy gate access to proxy hosts by verifying requests against the Caddy Proxy Manager auth service before forwarding them upstream. The forward auth API has two responsibilities: configuring which users and groups are allowed to access a specific proxy host, and managing the active session records that track authenticated users.
+
+<Note>
+  All endpoints require authentication. Endpoints that modify access lists or delete sessions require admin role.
+</Note>
+
+---
+
+## Per-host access control
+
+Each proxy host can have an independent forward auth access list that names which users and groups are permitted. When forward auth is enabled on a host, only requests from users in the access list are forwarded upstream; all others are redirected to the login page.
+
+### Get forward auth access list
+
+Returns the current access list for a proxy host, expressed as arrays of user IDs and group IDs.
+
+```
+GET /api/v1/proxy-hosts/{id}/forward-auth-access
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the proxy host.
+</ParamField>
+
+**Response fields**
+
+<ResponseField name="userIds" type="integer[]">
+  Array of user IDs that have direct access to this proxy host.
+</ResponseField>
+
+<ResponseField name="groupIds" type="integer[]">
+  Array of group IDs whose members have access to this proxy host.
+</ResponseField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | Access list object |
+| `404` | Proxy host not found |
+
+<CodeGroup>
+
+```bash Request
+curl -X GET https://your-instance/api/v1/proxy-hosts/5/forward-auth-access \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+{
+  "userIds": [1, 4],
+  "groupIds": [2]
+}
+```
+
+</CodeGroup>
+
+---
+
+### Set forward auth access list
+
+Replaces the entire forward auth access list for a proxy host. Pass empty arrays to remove all access grants. This is a full replacement — any users or groups not included in the request body will lose access.
+
+```
+PUT /api/v1/proxy-hosts/{id}/forward-auth-access
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the proxy host.
+</ParamField>
+
+**Request body**
+
+<ParamField body="userIds" type="integer[]">
+  Array of user IDs to grant direct access. Replaces the existing user list.
+</ParamField>
+
+<ParamField body="groupIds" type="integer[]">
+  Array of group IDs to grant access. Replaces the existing group list.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | `{"ok": true}` |
+| `404` | Proxy host not found |
+
+<CodeGroup>
+
+```bash Grant access to users and a group
+curl -X PUT https://your-instance/api/v1/proxy-hosts/5/forward-auth-access \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"userIds": [1, 4], "groupIds": [2]}'
+```
+
+```bash Remove all access grants
+curl -X PUT https://your-instance/api/v1/proxy-hosts/5/forward-auth-access \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"userIds": [], "groupIds": []}'
+```
+
+```json Response
+{ "ok": true }
+```
+
+</CodeGroup>
+
+---
+
+## Session management
+
+When a user authenticates through forward auth, a session record is created. These sessions can be listed and revoked via the API, which is useful for auditing active sessions or signing out specific users remotely.
+
+### List forward auth sessions
+
+Returns a list of all active forward auth sessions. Optionally filter by user ID to see sessions for a specific user.
+
+```
+GET /api/v1/forward-auth-sessions
+```
+
+**Query parameters**
+
+<ParamField query="userId" type="integer">
+  Filter sessions to those belonging to a specific user ID.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | Array of session objects |
+| `401` | Unauthorized |
+
+<CodeGroup>
+
+```bash List all sessions
+curl -X GET https://your-instance/api/v1/forward-auth-sessions \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```bash Filter by user
+curl -X GET "https://your-instance/api/v1/forward-auth-sessions?userId=3" \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+[
+  {
+    "id": 101,
+    "userId": 3,
+    "createdAt": "2024-06-10T08:00:00.000Z"
+  },
+  {
+    "id": 102,
+    "userId": 3,
+    "createdAt": "2024-06-10T09:30:00.000Z"
+  }
+]
+```
+
+</CodeGroup>
+
+---
+
+### Delete forward auth sessions
+
+Deletes one or more forward auth sessions. Without the `userId` query parameter, all sessions are deleted. With `userId`, only that user's sessions are removed.
+
+```
+DELETE /api/v1/forward-auth-sessions
+```
+
+**Query parameters**
+
+<ParamField query="userId" type="integer">
+  Delete sessions for a specific user only. Omit to delete all sessions.
+</ParamField>
+
+<Warning>
+  Omitting `userId` will revoke all active forward auth sessions across all users, signing everyone out immediately.
+</Warning>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | `{"ok": true}` |
+| `401` | Unauthorized |
+
+<CodeGroup>
+
+```bash Delete sessions for one user
+curl -X DELETE "https://your-instance/api/v1/forward-auth-sessions?userId=3" \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```bash Delete all sessions
+curl -X DELETE https://your-instance/api/v1/forward-auth-sessions \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+{ "ok": true }
+```
+
+</CodeGroup>
+
+---
+
+### Delete a specific session
+
+Deletes a single forward auth session by its ID.
+
+```
+DELETE /api/v1/forward-auth-sessions/{id}
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the session to delete.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | `{"ok": true}` |
+| `404` | Session not found |
+
+<CodeGroup>
+
+```bash Request
+curl -X DELETE https://your-instance/api/v1/forward-auth-sessions/101 \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+{ "ok": true }
+```
+
+</CodeGroup>

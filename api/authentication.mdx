@@ -1,0 +1,83 @@
+---
+title: "Authenticate API requests with Bearer tokens or sessions"
+description: "Learn how to authenticate Caddy Proxy Manager API requests using Bearer tokens or browser session cookies, and understand authentication error responses."
+---
+
+Every request to the Caddy Proxy Manager REST API must be authenticated. The API supports two methods: a Bearer token passed in the `Authorization` header, or a session cookie set automatically when you log in to the dashboard. Both methods require the calling user to have the **admin** role — all `/api/v1/` endpoints are restricted to admins.
+
+## Bearer token authentication
+
+Bearer tokens are the recommended method for scripts, CI/CD pipelines, and any programmatic access. You create a token from the dashboard and include it on every request.
+
+<Steps>
+  <Step title="Create an API token">
+    Navigate to your profile in the dashboard and create a new API token. Give it a descriptive name and set an optional expiration date.
+
+    See [API tokens](/administration/api-tokens) for the full walkthrough.
+
+    <Warning>
+      The token value is shown only once, immediately after creation. Copy and store it securely before closing the dialog — you cannot retrieve it again.
+    </Warning>
+  </Step>
+  <Step title="Pass the token in the Authorization header">
+    Include the token in every request as a Bearer credential:
+
+    ```
+    Authorization: Bearer <your-token>
+    ```
+  </Step>
+  <Step title="Make your first authenticated request">
+    Use the token to call any `/api/v1/` endpoint:
+
+    <CodeGroup>
+
+    ```bash curl
+    curl https://your-instance.example.com/api/v1/proxy-hosts \
+      -H "Authorization: Bearer YOUR_API_TOKEN"
+    ```
+
+    ```javascript fetch
+    const response = await fetch('https://your-instance.example.com/api/v1/proxy-hosts', {
+      headers: {
+        'Authorization': 'Bearer YOUR_API_TOKEN',
+      },
+    });
+    const hosts = await response.json();
+    ```
+
+    ```python requests
+    import requests
+
+    resp = requests.get(
+        'https://your-instance.example.com/api/v1/proxy-hosts',
+        headers={'Authorization': 'Bearer YOUR_API_TOKEN'},
+    )
+    hosts = resp.json()
+    ```
+
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Session cookie authentication
+
+When you are logged in to the Caddy Proxy Manager dashboard, your browser holds a session cookie named `authjs.session-token`. Any request made from the browser — including requests from the interactive `/api-docs` playground — is authenticated automatically using this cookie.
+
+<Info>
+  Session authentication is intended for browser-based access. For automation or external tooling, use a Bearer token instead.
+</Info>
+
+The session cookie is set by the application after a successful login and expires when your session ends or you log out.
+
+## Error responses
+
+If a request cannot be authenticated or authorized, the API returns a JSON error body:
+
+| Status | Reason | Example body |
+|--------|--------|--------------|
+| `401 Unauthorized` | Missing or invalid token/session | `{"error": "Unauthorized"}` |
+| `403 Forbidden` | Authenticated but not an admin | `{"error": "Forbidden"}` |
+
+<Note>
+  All `/api/v1/` endpoints require the **admin** role. Accounts with the `user` role will receive a `403 Forbidden` response even when credentials are valid.
+</Note>

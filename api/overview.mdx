@@ -1,0 +1,108 @@
+---
+title: "REST API overview: endpoints, versioning, and responses"
+description: "Explore the Caddy Proxy Manager REST API under /api/v1/. Covers versioning, resource groups, response formats, and HTTP status codes."
+---
+
+Caddy Proxy Manager exposes a full REST API under `/api/v1/` that lets you manage every aspect of the proxy — from creating hosts and certificates to configuring security rules and multi-instance sync. The API follows OpenAPI 3.1.0; interactive documentation is available at `/api-docs` in your dashboard.
+
+## Base URL
+
+All endpoints share a common path prefix:
+
+```
+/api/v1/
+```
+
+Requests must include valid authentication on every call. See [Authentication](/api/authentication) for details.
+
+## Interactive docs
+
+An embedded OpenAPI playground is available at `/api-docs` in your running dashboard instance. You can authenticate directly in the UI and try every endpoint without writing any code.
+
+<Tip>
+  The interactive docs are generated from the live OpenAPI spec served at `/api/v1/openapi.json`.
+</Tip>
+
+## Resource groups
+
+The API is organized into the following resource groups.
+
+<CardGroup cols={2}>
+  <Card title="Tokens" icon="key" href="/api/tokens">
+    Create and delete API tokens used for Bearer authentication.
+  </Card>
+  <Card title="Proxy Hosts" icon="network-wired" href="/api/proxy-hosts">
+    Manage HTTP/HTTPS reverse proxy hosts, including upstreams, TLS, and advanced rules.
+  </Card>
+  <Card title="L4 Proxy Hosts" icon="diagram-project" href="/api/l4-proxy-hosts">
+    Configure Layer 4 (TCP/UDP) stream proxy hosts with SNI matching.
+  </Card>
+  <Card title="Certificates" icon="certificate" href="/api/certificates">
+    Manage TLS certificates — ACME, custom uploads, and certificate details.
+  </Card>
+  <Card title="CA Certificates" icon="building-columns" href="/api/certificates">
+    Manage Certificate Authority certificates used for mTLS and custom PKI.
+  </Card>
+  <Card title="Client Certificates" icon="id-card" href="/api/mtls">
+    Issue and revoke client certificates for mutual TLS authentication.
+  </Card>
+  <Card title="Access Lists" icon="list-check" href="/api/access-lists">
+    Create HTTP basic-auth access lists and manage their username/password entries.
+  </Card>
+  <Card title="Settings" icon="sliders" href="/api/settings">
+    Read and update application settings by group (general, DNS, WAF, geo block, and more).
+  </Card>
+  <Card title="Instances" icon="server" href="/api/instances">
+    Register and sync remote Caddy Proxy Manager instances in multi-instance mode.
+  </Card>
+  <Card title="Users" icon="users" href="/api/users">
+    List and update user accounts and their roles.
+  </Card>
+  <Card title="Groups" icon="user-group" href="/api/groups">
+    Manage user groups used for forward auth access control.
+  </Card>
+  <Card title="mTLS Roles" icon="shield-halved" href="/api/mtls">
+    Define roles for role-based access control tied to mTLS client certificates.
+  </Card>
+  <Card title="Forward Auth" icon="door-open" href="/api/forward-auth">
+    Manage forward auth sessions and configure per-host access control.
+  </Card>
+  <Card title="Audit Log" icon="scroll" href="/api/audit-log">
+    Query the paginated audit log of all administrative actions.
+  </Card>
+  <Card title="Caddy" icon="gear" href="/api/caddy">
+    Trigger a live Caddy configuration reload to apply pending changes.
+  </Card>
+</CardGroup>
+
+## Response format
+
+### Success responses
+
+Successful requests return either the affected resource as a JSON object, or a confirmation envelope for operations that do not return data:
+
+```json
+{ "ok": true }
+```
+
+Collection endpoints return a JSON array of resource objects.
+
+### Error responses
+
+All errors return a JSON object with a single `error` field:
+
+```json
+{ "error": "string describing the problem" }
+```
+
+## HTTP status codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Request succeeded; resource returned or `{"ok": true}` |
+| `201` | Resource created; new resource object returned |
+| `400` | Bad request — invalid input or missing required fields |
+| `401` | Unauthorized — missing or invalid credentials |
+| `403` | Forbidden — authenticated but insufficient permissions |
+| `404` | Not found — resource does not exist |
+| `500` | Internal server error — Caddy configuration apply failed |

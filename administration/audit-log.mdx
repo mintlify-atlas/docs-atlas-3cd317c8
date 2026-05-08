@@ -1,0 +1,96 @@
+---
+title: "Audit log: searchable history of configuration changes"
+description: "Every configuration change in Caddy Proxy Manager is recorded with a timestamp and the user who made it. Search, filter, and paginate the full history."
+sidebarTitle: "Audit log"
+icon: "scroll"
+---
+
+Caddy Proxy Manager automatically records every configuration change — proxy host creates and updates, certificate imports, access list changes, settings updates, and more — in a tamper-evident audit log. Each entry captures a timestamp, the user who performed the action, and a human-readable summary of what changed. The audit log is read-only and accessible only to Admins.
+
+## What is logged
+
+All changes made through the dashboard or the REST API are recorded, including:
+
+- Creating, updating, enabling, or deleting proxy hosts and L4 proxy hosts
+- Importing, updating, or deleting certificates
+- Creating or modifying access lists and their entries
+- Changes to application settings
+- User account changes (role, status, profile)
+- API token creation and deletion
+- Group creation, updates, and membership changes
+
+<Info>
+  The audit log captures the _summary_ of each change. It does not store full before/after diffs of configuration objects.
+</Info>
+
+## Accessing the audit log
+
+### Dashboard
+
+Navigate to **Audit Log** in the sidebar. The page displays all events newest-first, with columns for **Time**, **User**, and **Event** summary.
+
+### API
+
+You can retrieve the audit log programmatically via the REST API:
+
+```http
+GET /api/v1/audit-log
+Authorization: Bearer <token>
+```
+
+#### Query parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `page` | integer | `1` | Page number to retrieve |
+| `per_page` | integer | `50` | Number of events per page |
+| `search` | string | — | Free-text search term |
+
+#### Example request
+
+```bash
+curl -s "https://your-cpm-instance/api/v1/audit-log?page=1&per_page=25&search=proxy+host" \
+  -H "Authorization: Bearer <token>"
+```
+
+#### Example response
+
+```json
+{
+  "data": [
+    {
+      "id": 42,
+      "createdAt": "2026-05-08T14:23:01.000Z",
+      "user": "admin@example.com",
+      "summary": "Created proxy host: app.example.com"
+    }
+  ],
+  "pagination": {
+    "total": 142,
+    "page": 1,
+    "perPage": 25
+  }
+}
+```
+
+## Searching and filtering
+
+Use the search box on the **Audit Log** dashboard page to filter events by keyword. The search matches against the event summary text and the user identifier. The results update automatically as you type (with a short debounce).
+
+Via the API, pass the `search` query parameter to filter results server-side.
+
+## Pagination
+
+The dashboard uses server-side pagination. Navigate between pages using the controls at the bottom of the table. The default page size is 50 events per page.
+
+Via the API, use `page` and `per_page` parameters. The response includes a `pagination` object with the total event count so you can calculate the total number of pages.
+
+<Warning>
+  The audit log is read-only. Entries cannot be edited or deleted, either from the dashboard or via the API.
+</Warning>
+
+## Access control
+
+Only users with the **Admin** role can view the audit log. Viewer and User accounts do not have access to the Audit Log page or the `/api/v1/audit-log` endpoint.
+
+See the [API Reference](/api/audit-log) for the full endpoint specification.

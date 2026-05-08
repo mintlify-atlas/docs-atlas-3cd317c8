@@ -1,0 +1,67 @@
+---
+title: "Upstream DNS pinning: resolve hostnames at save time"
+description: "Resolve upstream hostnames to IP addresses at config save time and write concrete IP dials to Caddy, preventing DNS-based failures or hijacks at runtime."
+---
+
+By default, Caddy resolves upstream hostnames at request time using the system resolver. Upstream DNS Pinning changes this behaviour: CPM resolves each hostname upstream **when you save or reload a proxy host configuration** and writes the resulting IP addresses directly into the Caddy config. Caddy then dials concrete IPs rather than re-resolving on every request.
+
+This is useful when your upstream services live on internal networks where DNS is flaky, when you want deterministic routing to a specific container IP, or when you need to lock down which address Caddy connects to regardless of what DNS returns later.
+
+## Enabling upstream DNS pinning
+
+### Globally
+
+Turn on pinning for all proxy hosts at once:
+
+1. Navigate to **Settings → Upstream DNS Pinning**.
+2. Enable the toggle and choose the default **address family**.
+3. Click **Save**. All proxy host configs are rewritten immediately.
+
+### Per-host override
+
+You can override the global setting on individual proxy hosts:
+
+1. Open a proxy host and go to the **Upstream DNS Pinning** tab.
+2. Choose `Enabled`, `Disabled`, or `Inherit from global`.
+3. Optionally select a different address family for this host.
+4. Click **Save**.
+
+## Address family selection
+
+| Value | Behaviour |
+|-------|-----------|
+| `both` | Resolves AAAA first, then A. Uses IPv6 addresses where available, falls back to IPv4. **Recommended.** |
+| `ipv6` | Resolves only AAAA records. Fails if the upstream has no IPv6 address. |
+| `ipv4` | Resolves only A records. Always produces IPv4 dials. |
+
+<Tip>
+  Use `both` unless you have a specific reason to force one address family. It prefers IPv6 where available and falls back to IPv4 automatically, giving you the widest compatibility.
+</Tip>
+
+## HTTPS upstream limitation
+
+<Warning>
+  If a single reverse proxy handler contains **multiple different HTTPS upstream hostnames**, CPM skips DNS pinning for those HTTPS upstreams. Pinning them would write concrete IPs into the `dial` field, but TLS SNI still sends the original hostname — the mismatch causes certificate verification failures.
+
+  In that case, hostname dials are preserved for those HTTPS upstreams. The pinned-IP behaviour applies only to hosts with a single HTTPS upstream hostname or to HTTP upstreams.
+</Warning>
+
+HTTP upstreams in the same handler are **not** affected by this limitation and are always eligible for pinning.
+
+### Example
+
+A proxy host with these upstreams:
+
+| Upstream | Protocol | Pinned? |
+|----------|----------|---------|
+| `backend-a.internal` | HTTP | Yes — resolved to IP |
+| `api.example.com` | HTTPS | Yes — if this is the only HTTPS upstream |
+| `api.example.com` + `api2.example.com` | HTTPS | No — multiple different HTTPS hostnames; hostnames kept |
+
+## How pinning interacts with config saves
+
+Pinned IPs are written at **save time**. If your upstream changes its IP address after a config save, Caddy continues dialling the old IP until you save the proxy host again (or the periodic sync re-resolves, if instance sync is enabled).
+
+<Note>
+  If DNS resolution fails for a hostname at save time, CPM logs a warning and keeps the previous pinned value (or falls back to hostname dial on first save). The config save still succeeds.
+</Note>

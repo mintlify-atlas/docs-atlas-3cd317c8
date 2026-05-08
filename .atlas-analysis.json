@@ -1,0 +1,151 @@
+{
+  "projectType": "saas",
+  "projectName": "Caddy Proxy Manager",
+  "projectDescription": "A modern web interface for managing Caddy Server reverse proxies, with built-in WAF, automatic HTTPS, mTLS, geo blocking, L4 TCP/UDP proxying, traffic analytics, and a full REST API.",
+  "theme": "aspen",
+  "primaryColor": "#00ADB5",
+  "lightColor": "#E0F7FA",
+  "darkColor": "#006064",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "configuration"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/proxy-hosts",
+              "features/l4-proxy-hosts",
+              "features/certificates",
+              "features/access-lists"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/waf",
+              "security/geo-blocking",
+              "security/mtls",
+              "security/forward-auth"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/analytics",
+              "advanced/oauth-sso",
+              "advanced/instance-sync",
+              "advanced/dns-providers",
+              "advanced/upstream-dns"
+            ]
+          },
+          {
+            "group": "Administration",
+            "pages": [
+              "administration/user-management",
+              "administration/audit-log",
+              "administration/api-tokens"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Proxy Management",
+            "pages": [
+              "api/proxy-hosts",
+              "api/l4-proxy-hosts",
+              "api/caddy"
+            ]
+          },
+          {
+            "group": "Certificates & Security",
+            "pages": [
+              "api/certificates",
+              "api/access-lists",
+              "api/mtls"
+            ]
+          },
+          {
+            "group": "Users & Auth",
+            "pages": [
+              "api/users",
+              "api/groups",
+              "api/forward-auth",
+              "api/tokens"
+            ]
+          },
+          {
+            "group": "System",
+            "pages": [
+              "api/settings",
+              "api/instances",
+              "api/audit-log"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Reverse proxy host management with load balancing, health checks, and custom headers",
+    "L4 TCP/UDP stream proxying with TLS SNI matching and proxy protocol support",
+    "Automatic HTTPS via Caddy ACME (Let's Encrypt / ZeroSSL) with DNS-01 challenge support",
+    "Web Application Firewall powered by Coraza with OWASP Core Rule Set",
+    "Geo blocking by country, continent, ASN, CIDR, or IP per proxy host",
+    "Mutual TLS (mTLS) with built-in CA, client certificate issuance/revocation, and RBAC",
+    "Built-in forward auth identity provider (no external IdP required)",
+    "Traffic analytics with ClickHouse backend: live charts, country map, WAF event log",
+    "Full REST API under /api/v1/ with OpenAPI 3.1.0 documentation",
+    "Multi-instance master/slave configuration sync",
+    "OAuth2/OIDC SSO with any compliant provider",
+    "Complete audit trail for all configuration changes"
+  ],
+  "publicApiSurface": [
+    "GET/POST /api/v1/proxy-hosts",
+    "GET/PUT/DELETE /api/v1/proxy-hosts/{id}",
+    "GET/POST /api/v1/l4-proxy-hosts",
+    "GET/PUT/DELETE /api/v1/l4-proxy-hosts/{id}",
+    "GET/POST /api/v1/certificates",
+    "GET/PUT/DELETE /api/v1/certificates/{id}",
+    "GET/POST /api/v1/ca-certificates",
+    "GET/POST /api/v1/client-certificates",
+    "DELETE /api/v1/client-certificates/{id}",
+    "GET/POST /api/v1/access-lists",
+    "GET/PUT/DELETE /api/v1/access-lists/{id}",
+    "POST /api/v1/access-lists/{id}/entries",
+    "GET/PUT /api/v1/settings/{group}",
+    "GET/POST /api/v1/instances",
+    "DELETE /api/v1/instances/{id}",
+    "POST /api/v1/instances/sync",
+    "GET/PUT /api/v1/users/{id}",
+    "GET/POST /api/v1/groups",
+    "GET/PATCH/DELETE /api/v1/groups/{id}",
+    "POST /api/v1/groups/{id}/members",
+    "GET/POST /api/v1/mtls-roles",
+    "GET/PUT/DELETE /api/v1/mtls-roles/{id}",
+    "GET/PUT /api/v1/proxy-hosts/{id}/forward-auth-access",
+    "GET/DELETE /api/v1/forward-auth-sessions",
+    "GET/POST /api/v1/tokens",
+    "DELETE /api/v1/tokens/{id}",
+    "GET /api/v1/audit-log",
+    "POST /api/v1/caddy/apply"
+  ]
+}

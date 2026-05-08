@@ -1,0 +1,243 @@
+---
+title: "Users API: list, retrieve, and update user accounts"
+description: "REST API endpoints for user management in Caddy Proxy Manager. List all users, retrieve a specific user, or update a user's name, email, role, and status."
+---
+
+The users API lets you inspect and modify the user accounts registered in Caddy Proxy Manager. You can list all users, fetch a single user by ID, and update a user's profile fields or access level. User creation and deletion are handled through the authentication provider; the API exposes management operations only.
+
+<Note>
+  All endpoints require authentication. Admin role is required to list or modify other users.
+</Note>
+
+## The user object
+
+<ResponseField name="id" type="integer" required>
+  Unique numeric identifier for the user.
+</ResponseField>
+
+<ResponseField name="email" type="string" required>
+  The user's email address. Used as the login identifier.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name. May be `null` if not set.
+</ResponseField>
+
+<ResponseField name="role" type="string" required>
+  Access level for the user. One of `admin`, `user`, or `viewer`.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+  Account status. One of `active` or `inactive`.
+</ResponseField>
+
+<ResponseField name="provider" type="string" required>
+  Authentication provider used to create the account (e.g. `credentials`).
+</ResponseField>
+
+<ResponseField name="subject" type="string" required>
+  Provider-specific subject identifier.
+</ResponseField>
+
+<ResponseField name="avatarUrl" type="string">
+  URL to the user's avatar image. May be `null`.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+  ISO 8601 timestamp of when the account was created.
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string" required>
+  ISO 8601 timestamp of the last modification.
+</ResponseField>
+
+---
+
+## List users
+
+Returns an array of all user accounts.
+
+```
+GET /api/v1/users
+```
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | Array of user objects |
+| `401` | Unauthorized |
+
+<CodeGroup>
+
+```bash Request
+curl -X GET https://your-instance/api/v1/users \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+[
+  {
+    "id": 1,
+    "email": "admin@example.com",
+    "name": "Admin User",
+    "role": "admin",
+    "status": "active",
+    "provider": "credentials",
+    "subject": "1",
+    "avatarUrl": null,
+    "createdAt": "2024-01-15T10:00:00.000Z",
+    "updatedAt": "2024-01-15T10:00:00.000Z"
+  },
+  {
+    "id": 2,
+    "email": "viewer@example.com",
+    "name": null,
+    "role": "viewer",
+    "status": "active",
+    "provider": "credentials",
+    "subject": "2",
+    "avatarUrl": null,
+    "createdAt": "2024-02-01T08:30:00.000Z",
+    "updatedAt": "2024-02-01T08:30:00.000Z"
+  }
+]
+```
+
+</CodeGroup>
+
+---
+
+## Get a user
+
+Returns a single user by their numeric ID.
+
+```
+GET /api/v1/users/{id}
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the user to retrieve.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | User object |
+| `401` | Unauthorized |
+| `404` | User not found |
+
+<CodeGroup>
+
+```bash Request
+curl -X GET https://your-instance/api/v1/users/2 \
+  -H "Authorization: Bearer YOUR_API_TOKEN"
+```
+
+```json Response
+{
+  "id": 2,
+  "email": "viewer@example.com",
+  "name": null,
+  "role": "viewer",
+  "status": "active",
+  "provider": "credentials",
+  "subject": "2",
+  "avatarUrl": null,
+  "createdAt": "2024-02-01T08:30:00.000Z",
+  "updatedAt": "2024-02-01T08:30:00.000Z"
+}
+```
+
+</CodeGroup>
+
+---
+
+## Update a user
+
+Updates one or more fields on an existing user account. All body fields are optional; include only the fields you want to change.
+
+```
+PUT /api/v1/users/{id}
+```
+
+**Path parameters**
+
+<ParamField path="id" type="integer" required>
+  The numeric ID of the user to update.
+</ParamField>
+
+**Request body**
+
+<ParamField body="name" type="string">
+  Display name for the user. Pass `null` to clear the name.
+</ParamField>
+
+<ParamField body="email" type="string">
+  Email address for the user account.
+</ParamField>
+
+<ParamField body="role" type="string">
+  Access role to assign. One of `admin` or `user`.
+
+  <Warning>
+    You cannot assign the `viewer` role through this endpoint. The PUT endpoint only accepts `admin` or `user` as valid role values.
+  </Warning>
+</ParamField>
+
+<ParamField body="status" type="string">
+  Account status. One of `active` or `disabled`. Setting `disabled` prevents the user from logging in.
+</ParamField>
+
+**Responses**
+
+| Code | Description |
+|------|-------------|
+| `200` | Updated user object |
+| `400` | Invalid request body |
+| `401` | Unauthorized |
+| `403` | Forbidden — insufficient permissions |
+| `404` | User not found |
+
+<CodeGroup>
+
+```bash Promote to admin
+curl -X PUT https://your-instance/api/v1/users/2 \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"role": "admin"}'
+```
+
+```bash Disable account
+curl -X PUT https://your-instance/api/v1/users/2 \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "disabled"}'
+```
+
+```bash Update name and email
+curl -X PUT https://your-instance/api/v1/users/2 \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Jane Smith", "email": "jane@example.com"}'
+```
+
+```json Response
+{
+  "id": 2,
+  "email": "jane@example.com",
+  "name": "Jane Smith",
+  "role": "admin",
+  "status": "active",
+  "provider": "credentials",
+  "subject": "2",
+  "avatarUrl": null,
+  "createdAt": "2024-02-01T08:30:00.000Z",
+  "updatedAt": "2024-06-10T14:22:00.000Z"
+}
+```
+
+</CodeGroup>

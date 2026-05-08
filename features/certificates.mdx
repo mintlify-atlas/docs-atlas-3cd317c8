@@ -1,0 +1,124 @@
+---
+title: 'TLS certificate management: ACME, custom, and mTLS CA'
+description: 'Manage TLS certificates in CPM: automatic ACME, DNS-01 wildcard challenges, custom certificate import, and a built-in CA for issuing mTLS client certificates.'
+sidebarTitle: 'Certificates'
+icon: 'shield-halved'
+---
+
+Caddy Proxy Manager provides three certificate modes in a single **Certificates** page: automatic HTTPS via Caddy's ACME client, manual import for certificates you manage yourself, and a built-in certificate authority (CA) for issuing internal client certificates used in mutual TLS (mTLS). All DNS provider credentials are encrypted at rest with AES-256-GCM.
+
+## Automatic HTTPS
+
+Every proxy host you create gets HTTPS automatically. Caddy's built-in ACME client negotiates with Let's Encrypt (or ZeroSSL) and renews certificates before they expire — no manual steps required.
+
+When you leave the certificate field set to **Managed by Caddy (Auto)** on a proxy host, Caddy handles provisioning and renewal transparently. You do not need to create a certificate entry on the Certificates page.
+
+<Note>
+  Automatic ACME uses the HTTP-01 challenge by default. Port 80 must be publicly reachable from the internet on the domains you are proxying. If port 80 is not available or you need wildcard certificates, use the DNS-01 challenge instead.
+</Note>
+
+## DNS-01 challenge
+
+The DNS-01 challenge proves domain ownership by creating a `_acme-challenge` TXT record in DNS. It works when port 80 is not public, and it is the only way to obtain wildcard certificates (e.g. `*.example.com`).
+
+### Configure a DNS provider
+
+<Steps>
+  <Step title="Open Settings">
+    Navigate to **Settings → DNS Providers**.
+  </Step>
+  <Step title="Select a provider">
+    Choose your DNS provider from the list and enter your API credentials. Credentials are encrypted at rest with AES-256-GCM before being stored.
+  </Step>
+  <Step title="Save">
+    Click **Save**. The provider becomes the default DNS-01 challenge provider for all ACME-managed certificates.
+  </Step>
+</Steps>
+
+### Supported DNS providers
+
+<CardGroup cols={3}>
+  <Card title="Cloudflare" icon="cloud" />
+  <Card title="Amazon Route 53" icon="aws" />
+  <Card title="DigitalOcean" icon="digital-ocean" />
+  <Card title="Duck DNS" icon="duck" />
+  <Card title="Hetzner" icon="server" />
+  <Card title="Vultr" icon="v" />
+  <Card title="Porkbun" icon="pig" />
+  <Card title="GoDaddy" icon="g" />
+  <Card title="Namecheap" icon="n" />
+  <Card title="OVH" icon="o" />
+  <Card title="IONOS" icon="i" />
+  <Card title="Linode" icon="linode" />
+</CardGroup>
+
+### Per-certificate provider override
+
+If you use multiple DNS providers for different domains, you can select a different provider on a per-certificate basis. Open the certificate, expand **DNS Provider**, and choose the override provider.
+
+## Custom certificate import
+
+Import a certificate you obtained outside of CPM (from a public CA, an internal PKI, or a certificate purchased from a reseller).
+
+<Steps>
+  <Step title="Open Certificates">
+    Navigate to **Certificates** in the sidebar.
+  </Step>
+  <Step title="Click Add">
+    Click **Add Certificate** and select **Imported**.
+  </Step>
+  <Step title="Paste the certificate and key">
+    Paste the PEM-encoded certificate (including any intermediate chain) into **Certificate PEM** and the private key into **Private Key PEM**.
+  </Step>
+  <Step title="Set domain names">
+    Enter the domain names the certificate covers (comma-separated). CPM uses these to display expiry information.
+  </Step>
+  <Step title="Save">
+    Click **Save**. The certificate is now available to assign to proxy hosts.
+  </Step>
+</Steps>
+
+<Warning>
+  Private keys for imported certificates are stored unencrypted in the SQLite database. Restrict access to the database file and Docker volumes in production. Consider using automatic ACME certificates where possible.
+</Warning>
+
+CPM monitors the expiry date of imported certificates and displays a warning when a certificate is approaching expiration.
+
+## Built-in CA for mTLS
+
+CPM includes a built-in certificate authority for issuing internal client certificates. You can use these certificates to enforce mutual TLS (mTLS) on proxy hosts — requiring clients to present a valid certificate before the connection is accepted.
+
+### Generate a CA
+
+<Steps>
+  <Step title="Open Certificates">
+    Navigate to **Certificates** and click the **Certificate Authorities** tab.
+  </Step>
+  <Step title="Generate a new CA">
+    Click **Generate CA**, enter a **Name** and **Common Name**, and set the validity period (up to 3650 days). CPM generates a 4096-bit RSA CA certificate and stores the private key securely.
+  </Step>
+</Steps>
+
+You can also import an existing CA certificate if you have one from an external PKI.
+
+### Issue a client certificate
+
+<Steps>
+  <Step title="Select a CA">
+    Open the CA you want to issue from and click **Issue Client Certificate**.
+  </Step>
+  <Step title="Fill in the details">
+    Enter the **Common Name** for the certificate (usually the user or service name) and the validity period.
+  </Step>
+  <Step title="Set an export password">
+    Enter a password to protect the PKCS#12 export file. The certificate and private key are bundled into a `.p12` file and downloaded immediately — CPM does not store the client private key.
+  </Step>
+</Steps>
+
+### Revoke a client certificate
+
+Open the CA, find the issued certificate in the list, and click **Revoke**. Caddy's mTLS handler enforces revocation in fail-closed mode: if all trusted certificates for a host are revoked, all connections to that host are rejected.
+
+<Tip>
+  Assign a CA to a proxy host by enabling mTLS in the **mTLS** section of the proxy host form. See the mTLS documentation for role-based access control on top of client certificates.
+</Tip>

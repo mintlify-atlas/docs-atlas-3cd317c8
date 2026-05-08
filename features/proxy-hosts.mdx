@@ -1,0 +1,160 @@
+---
+title: 'Proxy hosts: routing, load balancing, and health checks'
+description: 'Create HTTP/HTTPS reverse proxy hosts with load balancing across multiple upstreams, path-based routing, health checks, redirects, and custom headers.'
+sidebarTitle: 'Proxy hosts'
+icon: 'server'
+---
+
+Proxy hosts are the core resource in Caddy Proxy Manager. Each host maps one or more domain names to one or more backend upstreams over HTTP or HTTPS, with Caddy handling TLS automatically via ACME. Beyond simple proxying, you can configure load balancing across multiple backends, define path-based location rules, add redirect and rewrite rules, inject custom headers, and toggle hosts on or off without deleting them.
+
+## Creating a proxy host
+
+<Steps>
+  <Step title="Open Proxy Hosts">
+    Navigate to **Proxy Hosts** in the sidebar.
+  </Step>
+  <Step title="Click Add">
+    Click **Add Proxy Host** to open the creation dialog.
+  </Step>
+  <Step title="Fill in the details">
+    Enter a **name** for the host (display only), one or more **domains** (comma-separated), and at least one **upstream** address (e.g. `http://backend:8080`). Multiple upstreams enable load balancing.
+  </Step>
+  <Step title="Configure TLS">
+    Leave the certificate field set to **Managed by Caddy (Auto)** to let Caddy obtain a certificate automatically via ACME. Select a custom certificate from the dropdown if you have imported one.
+  </Step>
+  <Step title="Save">
+    Click **Save**. The configuration is written to Caddy immediately.
+  </Step>
+</Steps>
+
+<Note>
+  Automatic HTTPS uses Caddy's built-in ACME client to obtain Let's Encrypt or ZeroSSL certificates. Port 80 must be reachable for HTTP-01 challenges. For wildcard certificates or environments where port 80 is blocked, configure a DNS-01 challenge provider in **Settings → DNS Providers**. See [Certificate management](/features/certificates) for details.
+</Note>
+
+## Multiple upstreams
+
+Add more than one upstream address (one per line, or comma-separated) to distribute traffic across backends. When multiple upstreams are defined, load balancing is applied automatically using the selected policy.
+
+```text
+http://backend-1:8080
+http://backend-2:8080
+http://backend-3:8080
+```
+
+## Load balancing policies
+
+Eight policies are available. Select one in the **Load Balancer** section of the proxy host form.
+
+<AccordionGroup>
+  <Accordion title="round_robin">
+    Requests are distributed to upstreams in order, cycling through the list sequentially. This is a good default for stateless services.
+  </Accordion>
+  <Accordion title="random">
+    Each request is sent to a randomly selected upstream.
+  </Accordion>
+  <Accordion title="least_conn">
+    Routes each request to the upstream with the fewest active connections. Works well when backend response times vary.
+  </Accordion>
+  <Accordion title="ip_hash">
+    Hashes the client IP address to select an upstream, so the same client always reaches the same backend.
+  </Accordion>
+  <Accordion title="uri_hash">
+    Hashes the request URI to select an upstream. Useful for cache-affinity proxying.
+  </Accordion>
+  <Accordion title="header">
+    Hashes a specific request header to select an upstream. Specify the header name in the **Policy header field** input.
+  </Accordion>
+  <Accordion title="cookie">
+    Uses a cookie to pin a client to an upstream. Specify the **Cookie name** and optionally a **Cookie secret** for HMAC signing.
+  </Accordion>
+  <Accordion title="first">
+    Always sends traffic to the first upstream in the list. Falls back to subsequent upstreams only when the first is unhealthy.
+  </Accordion>
+</AccordionGroup>
+
+You can also configure **try duration**, **try interval**, and **retries** to control how long Caddy attempts to reach an upstream before giving up or moving to the next one.
+
+## Health checks
+
+### Active health checks
+
+Active health checks probe each upstream on a schedule and mark it unavailable if the check fails.
+
+| Field | Description |
+|---|---|
+| URI | Path to probe (e.g. `/health`). Required to enable active checks. |
+| Port | Port to use for the probe. Defaults to the upstream's port. |
+| Interval | How often to probe (e.g. `10s`). |
+| Timeout | Maximum wait for a response (e.g. `5s`). |
+| Expected status | HTTP status code that indicates a healthy response (e.g. `200`). |
+| Expected body | String that must appear in the response body. |
+
+### Passive health checks
+
+Passive health checks watch real traffic and mark an upstream unhealthy when it returns errors or takes too long.
+
+| Field | Description |
+|---|---|
+| Fail duration | How long an upstream stays marked unhealthy (e.g. `30s`). |
+| Max fails | Number of failures before the upstream is marked unhealthy. |
+| Unhealthy status codes | Comma-separated HTTP status codes that count as failures. |
+| Unhealthy latency | Response time above which a request counts as a failure (e.g. `2s`). |
+
+## Location rules
+
+Location rules let you route requests to different upstreams based on the request path, all within a single proxy host.
+
+<Steps>
+  <Step title="Open the Location Rules section">
+    Expand the **Location Rules** panel in the proxy host form.
+  </Step>
+  <Step title="Add a rule">
+    Enter a path pattern (e.g. `/api/*`) and the upstream address for that path (e.g. `http://api-backend:3000`).
+  </Step>
+  <Step title="Add more rules as needed">
+    Rules are evaluated in order. Add a catch-all path `/` last to handle all remaining traffic.
+  </Step>
+</Steps>
+
+Example: route API traffic to one service and WebSocket traffic to another.
+
+```text
+/api/*   → http://api-service:3000
+/ws/*    → http://ws-service:4000
+/        → http://web-frontend:8080
+```
+
+## Redirect rules
+
+Redirect rules return HTTP redirect responses for matching paths, before traffic reaches any upstream.
+
+Supported status codes:
+
+| Code | Type |
+|---|---|
+| `301` | Moved Permanently |
+| `302` | Found (temporary) |
+| `307` | Temporary Redirect (preserves method) |
+| `308` | Permanent Redirect (preserves method) |
+
+## Rewrite rules
+
+A path prefix rewrite strips or replaces the beginning of the request path before forwarding it to the upstream.
+
+For example, a prefix rewrite of `/app` on a host receiving `/app/users` forwards `/users` to the backend.
+
+## Custom headers
+
+You can inject, remove, or override request and response headers. This is useful for passing authentication tokens, removing internal headers before exposing a service, or setting `X-Forwarded-*` headers.
+
+<Tip>
+  Use custom headers to set `X-Real-IP` or pass a static API key to a backend that requires authentication from the proxy.
+</Tip>
+
+## Enable and disable
+
+Each proxy host has an **Enabled** toggle. Disabling a host removes it from the Caddy configuration without deleting it. Re-enabling it restores the configuration immediately. This is useful for maintenance windows or temporarily taking a service offline.
+
+<Warning>
+  Disabling a proxy host that serves a domain used by Caddy's ACME automation may cause certificate renewal to fail while the host is disabled.
+</Warning>

@@ -1,0 +1,94 @@
+---
+title: "Multi-instance sync: push config from master to slaves"
+description: "Replicate proxy hosts, certificates, access lists, and settings from a master Caddy Proxy Manager instance to one or more slave instances automatically."
+---
+
+Instance Sync lets you run a **master** Caddy Proxy Manager node that pushes its entire configuration to one or more **slave** nodes on every change. This is useful for high-availability setups, geo-distributed edge nodes, or blue/green deployments where you want a single source of truth for proxy configuration.
+
+## How it works
+
+Whenever a configuration change is saved on the master — a new proxy host, an updated certificate, a modified access list, or a settings change — the master immediately pushes the full configuration state to every registered slave over HTTPS. Slaves apply the configuration and reload Caddy automatically.
+
+**What is synced:**
+- Proxy hosts (including headers, load balancing, and location rules)
+- Certificates
+- Access lists
+- Settings
+
+**What is not synced:**
+- User accounts and passwords
+- API tokens
+- Audit log entries
+- OAuth provider configuration
+
+<Note>
+  Each slave maintains its own user database. Create admin accounts on each slave independently.
+</Note>
+
+## Configuration
+
+### Master
+
+Set `INSTANCE_MODE=master` and provide a JSON array of slave descriptors in `INSTANCE_SLAVES`.
+
+```env
+INSTANCE_MODE=master
+INSTANCE_SLAVES='[{"name":"replica-eu","url":"https://replica-eu.example.com","token":"<32-char-token>"},{"name":"replica-us","url":"https://replica-us.example.com","token":"<32-char-token>"}]'
+```
+
+Each slave entry in the JSON array accepts:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Human-readable label for this slave (shown in logs) |
+| `url` | Public HTTPS URL of the slave instance |
+| `token` | Shared bearer token — must match `INSTANCE_SYNC_TOKEN` on the slave |
+
+Generate a secure token with:
+
+```bash
+openssl rand -base64 32
+```
+
+### Slave
+
+Set `INSTANCE_MODE=slave` and the token the master will use to authenticate.
+
+```env
+INSTANCE_MODE=slave
+INSTANCE_SYNC_TOKEN=<32-char-token>
+```
+
+The slave exposes a protected sync endpoint. The master calls this endpoint with the bearer token on every configuration change.
+
+## Periodic sync
+
+By default (`INSTANCE_SYNC_INTERVAL=0`), sync is event-driven only. To also run a periodic full sync — for example, to recover from a temporary network outage — set the interval in seconds:
+
+```env
+INSTANCE_SYNC_INTERVAL=300   # full sync every 5 minutes
+```
+
+## HTTP vs HTTPS
+
+<Warning>
+  Always use HTTPS slave URLs in production. Sync payloads contain full proxy configurations including certificate data. Transmitting these over plain HTTP exposes sensitive data.
+</Warning>
+
+For internal Docker networks where TLS termination happens at a higher layer, you can allow HTTP:
+
+```env
+INSTANCE_SYNC_ALLOW_HTTP=true
+```
+
+Only set this for trusted internal networks (e.g., containers on the same Docker bridge network). Never use it for inter-datacenter or internet-facing replication.
+
+## Full environment variable reference
+
+| Variable | Role | Description | Default |
+|----------|------|-------------|---------|
+| `INSTANCE_MODE` | Both | `standalone`, `master`, or `slave` | `standalone` |
+| `INSTANCE_SLAVES` | Master | JSON array of slave descriptors | — |
+| `INSTANCE_SYNC_TOKEN` | Slave | Bearer token slaves use to authenticate inbound sync requests | — |
+| `INSTANCE_SYNC_INTERVAL` | Master | Periodic sync interval in seconds (`0` = event-driven only) | `0` |
+| `INSTANCE_SYNC_ALLOW_HTTP` | Master | Allow sync over plain HTTP | `false` |

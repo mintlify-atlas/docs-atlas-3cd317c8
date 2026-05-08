@@ -1,0 +1,437 @@
+---
+title: 'Proxy hosts API: manage HTTP/HTTPS reverse proxies'
+description: 'Create, read, update, and delete HTTP/HTTPS reverse proxy hosts via the Caddy Proxy Manager REST API, including TLS, load balancing, and WAF options.'
+---
+
+The proxy hosts API gives you programmatic control over every HTTP and HTTPS reverse proxy entry in Caddy Proxy Manager. Each proxy host maps one or more domain names to one or more upstream servers and carries optional settings for TLS termination, WebSocket support, access control, load balancing, geographic blocking, WAF rules, path rewrites, and more. All endpoints require a valid bearer token or an active session cookie.
+
+<Note>
+  All requests must include an `Authorization: Bearer <token>` header or a valid `authjs.session-token` session cookie. Tokens are created on the Profile page.
+</Note>
+
+---
+
+## List proxy hosts
+
+<br />
+
+**`GET /api/v1/proxy-hosts`**
+
+Returns an array of all proxy host objects.
+
+```bash
+curl https://your-cpm-host/api/v1/proxy-hosts \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Response
+
+Returns `200` with an array of [ProxyHost](#proxy-host-object) objects.
+
+---
+
+## Create a proxy host
+
+<br />
+
+**`POST /api/v1/proxy-hosts`**
+
+Creates a new HTTP/HTTPS reverse proxy host. Caddy reloads its configuration automatically after a successful create.
+
+```bash
+curl -X POST https://your-cpm-host/api/v1/proxy-hosts \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My App",
+    "domains": ["app.example.com"],
+    "upstreams": ["localhost:3000"],
+    "ssl_forced": true,
+    "hsts_enabled": true,
+    "allow_websocket": true,
+    "enabled": true
+  }'
+```
+
+### Request body
+
+<ParamField body="name" type="string" required>
+  Human-readable label for this proxy host.
+</ParamField>
+
+<ParamField body="domains" type="string[]" required>
+  One or more domain names to match, e.g. `["app.example.com", "www.example.com"]`.
+</ParamField>
+
+<ParamField body="upstreams" type="string[]" required>
+  Upstream servers to proxy traffic to, e.g. `["localhost:3000"]`. Supports multiple entries for load balancing.
+</ParamField>
+
+<ParamField body="certificate_id" type="integer | null">
+  ID of the TLS certificate to use. Set to `null` for no certificate.
+</ParamField>
+
+<ParamField body="access_list_id" type="integer | null">
+  ID of the HTTP basic-auth access list to enforce. Set to `null` for no access control.
+</ParamField>
+
+<ParamField body="ssl_forced" type="boolean">
+  Redirect all HTTP traffic to HTTPS when `true`.
+</ParamField>
+
+<ParamField body="hsts_enabled" type="boolean">
+  Add a `Strict-Transport-Security` header to responses.
+</ParamField>
+
+<ParamField body="hsts_subdomains" type="boolean">
+  Include `includeSubDomains` in the HSTS header.
+</ParamField>
+
+<ParamField body="allow_websocket" type="boolean">
+  Pass WebSocket upgrade headers to the upstream.
+</ParamField>
+
+<ParamField body="preserve_host_header" type="boolean">
+  Forward the original `Host` header instead of the upstream address.
+</ParamField>
+
+<ParamField body="skip_https_hostname_validation" type="boolean">
+  Disable TLS hostname verification when connecting to the upstream over HTTPS.
+</ParamField>
+
+<ParamField body="enabled" type="boolean">
+  Whether this proxy host is active. Defaults to `true`.
+</ParamField>
+
+<ParamField body="custom_reverse_proxy_json" type="string | null">
+  Raw Caddy JSON to merge into the `reverse_proxy` handler. Advanced use only.
+</ParamField>
+
+<ParamField body="custom_pre_handlers_json" type="string | null">
+  Raw Caddy JSON for handlers that run before `reverse_proxy`. Advanced use only.
+</ParamField>
+
+<ParamField body="authentik" type="object | null">
+  Authentik SSO forward-auth configuration.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean">Enable Authentik forward auth.</ParamField>
+    <ParamField body="outpostDomain" type="string | null">Authentik outpost domain, e.g. `auth.example.com`.</ParamField>
+    <ParamField body="outpostUpstream" type="string | null">Authentik upstream URL, e.g. `http://authentik:9000`.</ParamField>
+    <ParamField body="authEndpoint" type="string | null">Custom auth endpoint path.</ParamField>
+    <ParamField body="copyHeaders" type="string[]">Headers to copy from the Authentik response into the proxied request.</ParamField>
+    <ParamField body="trustedProxies" type="string[]">Trusted proxy CIDRs, e.g. `["private_ranges"]`.</ParamField>
+    <ParamField body="setOutpostHostHeader" type="boolean">Set the outpost host header.</ParamField>
+    <ParamField body="protectedPaths" type="string[] | null">Paths to protect. `null` protects all paths.</ParamField>
+    <ParamField body="excludedPaths" type="string[] | null">Paths excluded from auth while the rest remain protected.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="load_balancer" type="object | null">
+  Load balancing settings for multiple upstreams.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean">Enable load balancing.</ParamField>
+    <ParamField body="policy" type="string">Strategy: `random`, `round_robin`, `least_conn`, `ip_hash`, `first`, `header`, `cookie`, or `uri_hash`.</ParamField>
+    <ParamField body="policyHeaderField" type="string | null">Header name used by the `header` policy.</ParamField>
+    <ParamField body="policyCookieName" type="string | null">Cookie name used by the `cookie` policy.</ParamField>
+    <ParamField body="policyCookieSecret" type="string | null">Secret for signing the load-balancer cookie.</ParamField>
+    <ParamField body="tryDuration" type="string | null">How long to retry failed upstreams, e.g. `5s`.</ParamField>
+    <ParamField body="tryInterval" type="string | null">Interval between retries, e.g. `250ms`.</ParamField>
+    <ParamField body="retries" type="integer | null">Maximum number of upstream retries.</ParamField>
+    <ParamField body="activeHealthCheck" type="object | null">Active health check configuration (uri, port, interval, timeout, status, body).</ParamField>
+    <ParamField body="passiveHealthCheck" type="object | null">Passive health check configuration (failDuration, maxFails, unhealthyStatus, unhealthyLatency).</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="dns_resolver" type="object | null">
+  Custom DNS resolver for upstream name resolution.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean">Enable the custom DNS resolver.</ParamField>
+    <ParamField body="resolvers" type="string[]">DNS server addresses, e.g. `["1.1.1.1", "8.8.8.8"]`.</ParamField>
+    <ParamField body="fallbacks" type="string[] | null">Fallback DNS servers.</ParamField>
+    <ParamField body="timeout" type="string | null">Query timeout, e.g. `5s`.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="upstream_dns_resolution" type="object | null">
+  Address family preference for upstream DNS resolution.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean | null">Enable address family preference.</ParamField>
+    <ParamField body="family" type="string | null">Preferred family: `ipv4`, `ipv6`, or `both`.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="geoblock" type="object | null">
+  Geographic and network-based access control.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean">Enable geo blocking.</ParamField>
+    <ParamField body="block_countries" type="string[]">ISO 3166-1 alpha-2 country codes to block, e.g. `["CN", "RU"]`.</ParamField>
+    <ParamField body="block_continents" type="string[]">Continent codes to block: `AF`, `AN`, `AS`, `EU`, `NA`, `OC`, `SA`.</ParamField>
+    <ParamField body="block_asns" type="integer[]">Autonomous system numbers to block.</ParamField>
+    <ParamField body="block_cidrs" type="string[]">CIDR ranges to block, e.g. `["10.0.0.0/8"]`.</ParamField>
+    <ParamField body="block_ips" type="string[]">Individual IP addresses to block.</ParamField>
+    <ParamField body="allow_countries" type="string[]">Country codes to allow (deny-all-except mode).</ParamField>
+    <ParamField body="allow_continents" type="string[]">Continent codes to allow.</ParamField>
+    <ParamField body="allow_asns" type="integer[]">ASNs to allow.</ParamField>
+    <ParamField body="allow_cidrs" type="string[]">CIDR ranges to allow.</ParamField>
+    <ParamField body="allow_ips" type="string[]">Individual IPs to allow.</ParamField>
+    <ParamField body="trusted_proxies" type="string[]">Proxy CIDRs trusted for `X-Forwarded-For`.</ParamField>
+    <ParamField body="fail_closed" type="boolean">Block the request when the client IP cannot be determined.</ParamField>
+    <ParamField body="response_status" type="integer">HTTP status code returned to blocked clients, e.g. `403`.</ParamField>
+    <ParamField body="response_body" type="string">Response body returned to blocked clients.</ParamField>
+    <ParamField body="response_headers" type="object">Custom response headers as a key-value map.</ParamField>
+    <ParamField body="redirect_url" type="string">If set, blocked clients receive a `302` redirect to this URL instead of the status/body response.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="geoblock_mode" type="string">
+  How per-host geo blocking merges with the global policy: `merge` or `override`.
+</ParamField>
+
+<ParamField body="waf" type="object | null">
+  Web Application Firewall configuration.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean">Enable WAF.</ParamField>
+    <ParamField body="mode" type="string">WAF mode: `On` or `Off`.</ParamField>
+    <ParamField body="load_owasp_crs" type="boolean">Load the OWASP Core Rule Set.</ParamField>
+    <ParamField body="custom_directives" type="string">Custom WAF directive string.</ParamField>
+    <ParamField body="excluded_rule_ids" type="integer[]">Rule IDs to exclude from enforcement.</ParamField>
+    <ParamField body="waf_mode" type="string">How per-host WAF merges with global WAF: `merge` or `override`.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="mtls" type="object | null">
+  Mutual TLS (client certificate) configuration.
+  <Expandable title="properties">
+    <ParamField body="enabled" type="boolean">Enable mTLS.</ParamField>
+    <ParamField body="ca_certificate_ids" type="integer[]">IDs of CA certificates to trust for client verification.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="redirects" type="object[]">
+  HTTP redirect rules applied before proxying.
+  <Expandable title="properties">
+    <ParamField body="from" type="string" required>Path pattern to match, e.g. `/.well-known/carddav`.</ParamField>
+    <ParamField body="to" type="string" required>Redirect destination, e.g. `/remote.php/dav/`.</ParamField>
+    <ParamField body="status" type="integer" required>HTTP status code: `301`, `302`, `307`, or `308`.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="rewrite" type="object | null">
+  Strip a path prefix before forwarding to the upstream.
+  <Expandable title="properties">
+    <ParamField body="path_prefix" type="string" required>Prefix to strip, e.g. `/app`.</ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="location_rules" type="object[]">
+  Path-based routing rules that send specific path patterns to different upstream sets (similar to nginx `location` blocks).
+  <Expandable title="properties">
+    <ParamField body="path" type="string" required>Caddy path pattern to match, e.g. `/ws/*`.</ParamField>
+    <ParamField body="upstreams" type="string[]" required>Upstream servers for this path, e.g. `["ws-backend:8080"]`.</ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+Returns `201` with the created [ProxyHost](#proxy-host-object).
+
+---
+
+## Get a proxy host
+
+<br />
+
+**`GET /api/v1/proxy-hosts/{id}`**
+
+Returns a single proxy host by its integer ID.
+
+```bash
+curl https://your-cpm-host/api/v1/proxy-hosts/1 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The proxy host ID.
+</ParamField>
+
+### Response
+
+Returns `200` with a [ProxyHost](#proxy-host-object), or `404` if not found.
+
+---
+
+## Update a proxy host
+
+<br />
+
+**`PUT /api/v1/proxy-hosts/{id}`**
+
+Replaces the configuration for an existing proxy host. The request body uses the same shape as [Create a proxy host](#create-a-proxy-host). Caddy reloads automatically on success.
+
+```bash
+curl -X PUT https://your-cpm-host/api/v1/proxy-hosts/1 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "My App",
+    "domains": ["app.example.com"],
+    "upstreams": ["localhost:4000"],
+    "ssl_forced": true,
+    "enabled": true
+  }'
+```
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The proxy host ID.
+</ParamField>
+
+### Response
+
+Returns `200` with the updated [ProxyHost](#proxy-host-object), `400` on validation error, or `404` if not found.
+
+---
+
+## Delete a proxy host
+
+<br />
+
+**`DELETE /api/v1/proxy-hosts/{id}`**
+
+Permanently removes a proxy host. Caddy reloads automatically after deletion.
+
+```bash
+curl -X DELETE https://your-cpm-host/api/v1/proxy-hosts/1 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Path parameters
+
+<ParamField path="id" type="integer" required>
+  The proxy host ID.
+</ParamField>
+
+### Response
+
+Returns `200` with `{"ok": true}`, or `404` if not found.
+
+---
+
+## Proxy host object
+
+The full `ProxyHost` object returned by all endpoints includes:
+
+<ResponseField name="id" type="integer" required>
+  Unique identifier for the proxy host.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable label.
+</ResponseField>
+
+<ResponseField name="domains" type="string[]" required>
+  Domain names this host matches, e.g. `["example.com", "www.example.com"]`.
+</ResponseField>
+
+<ResponseField name="upstreams" type="string[]" required>
+  Upstream server addresses, e.g. `["localhost:8080"]`.
+</ResponseField>
+
+<ResponseField name="certificate_id" type="integer | null">
+  ID of the associated TLS certificate, or `null`.
+</ResponseField>
+
+<ResponseField name="access_list_id" type="integer | null">
+  ID of the associated access list, or `null`.
+</ResponseField>
+
+<ResponseField name="ssl_forced" type="boolean">
+  Whether HTTP-to-HTTPS redirect is active.
+</ResponseField>
+
+<ResponseField name="hsts_enabled" type="boolean">
+  Whether HSTS headers are sent.
+</ResponseField>
+
+<ResponseField name="hsts_subdomains" type="boolean">
+  Whether HSTS covers subdomains.
+</ResponseField>
+
+<ResponseField name="allow_websocket" type="boolean">
+  Whether WebSocket proxying is enabled.
+</ResponseField>
+
+<ResponseField name="preserve_host_header" type="boolean">
+  Whether the original `Host` header is forwarded.
+</ResponseField>
+
+<ResponseField name="skip_https_hostname_validation" type="boolean">
+  Whether TLS hostname verification is disabled for the upstream.
+</ResponseField>
+
+<ResponseField name="enabled" type="boolean" required>
+  Whether the host is currently active.
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 last-update timestamp.
+</ResponseField>
+
+<ResponseField name="custom_reverse_proxy_json" type="string | null">
+  Raw Caddy JSON merged into the `reverse_proxy` handler.
+</ResponseField>
+
+<ResponseField name="custom_pre_handlers_json" type="string | null">
+  Raw Caddy JSON for handlers before `reverse_proxy`.
+</ResponseField>
+
+<ResponseField name="authentik" type="object | null">
+  Authentik SSO configuration. See [request body](#request-body) for field details.
+</ResponseField>
+
+<ResponseField name="load_balancer" type="object | null">
+  Load balancer configuration. See [request body](#request-body) for field details.
+</ResponseField>
+
+<ResponseField name="dns_resolver" type="object | null">
+  Custom DNS resolver configuration.
+</ResponseField>
+
+<ResponseField name="upstream_dns_resolution" type="object | null">
+  Address family preference for upstream resolution.
+</ResponseField>
+
+<ResponseField name="geoblock" type="object | null">
+  Geographic/network access control configuration.
+</ResponseField>
+
+<ResponseField name="geoblock_mode" type="string">
+  How per-host geo blocking merges with the global policy: `merge` or `override`.
+</ResponseField>
+
+<ResponseField name="waf" type="object | null">
+  WAF configuration.
+</ResponseField>
+
+<ResponseField name="mtls" type="object | null">
+  Mutual TLS configuration.
+</ResponseField>
+
+<ResponseField name="redirects" type="object[]">
+  Array of redirect rules applied before proxying.
+</ResponseField>
+
+<ResponseField name="rewrite" type="object | null">
+  Path prefix strip configuration.
+</ResponseField>
+
+<ResponseField name="location_rules" type="object[]">
+  Path-based routing rules.
+</ResponseField>
